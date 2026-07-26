@@ -1,0 +1,12 @@
+# 비밀 값 (API 키, 구글 인증) 절대 올리지 않음
+.streamlit/secrets.toml
+
+# 개인 소득 기록 (깃헙에 올리지 않음, 앱은 구글 시트에서 읽음)
+migrated_taxi_2026.csv
+
+# 파이썬
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store

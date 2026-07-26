@@ -1,0 +1,6 @@
+streamlit>=1.40
+anthropic>=0.40
+gspread>=6.1
+google-auth>=2.35
+pandas>=2.2
+plotly>=5.24
