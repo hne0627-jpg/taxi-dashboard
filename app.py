@@ -283,9 +283,9 @@ st.markdown("""
     font-size: 1.4rem !important; padding: 0.55rem 0.7rem !important;
     height: auto !important; font-weight: 600;
   }
-  /* 숫자 증감 버튼(+/-) 큼직하게 */
+  /* 숫자 증감 버튼 숨김 (직접 입력이 빠르고 화면도 깔끔) */
   [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] {
-    width: 3rem !important;
+    display: none !important;
   }
   /* 저장 등 버튼: 크고 누르기 쉽게 */
   .stButton button, .stFormSubmitButton button {
