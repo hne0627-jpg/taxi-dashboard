@@ -302,6 +302,31 @@ st.markdown("""
   [data-testid="stMetricLabel"] p {color: #52514e; font-size: 0.95rem;}
   [data-testid="stMetricDelta"] {font-size: 0.85rem;}
 
+  /* 지표를 카드로: 하얀 배경, 둥근 모서리, 옅은 테두리 */
+  [data-testid="stMetric"] {
+    background: #ffffff;
+    border: 1px solid #e7e5df;
+    border-radius: 16px;
+    padding: 15px 18px;
+    box-shadow: 0 1px 2px rgba(20, 20, 20, 0.04);
+  }
+  [data-testid="stMetricValue"] {font-variant-numeric: tabular-nums;}
+  /* 그래프도 카드 안에 */
+  [data-testid="stPlotlyChart"] {
+    background: #ffffff;
+    border: 1px solid #e7e5df;
+    border-radius: 16px;
+    padding: 10px 8px 4px;
+    box-shadow: 0 1px 2px rgba(20, 20, 20, 0.04);
+  }
+  /* 입력칸도 하얗고 둥글게 */
+  .stNumberInput input, .stDateInput input, [data-baseweb="input"] {
+    background: #ffffff !important; border-radius: 12px !important;
+  }
+  [data-baseweb="input"] {border: 1px solid #e2e0da !important;}
+  /* 탭 밑줄, 선택 강조를 파랑으로 */
+  .stTabs [data-baseweb="tab-highlight"] {background-color: #2a78d6 !important;}
+
   /* 그래프가 두 개 나란한 줄은 좁은 화면에서 위아래로 쌓이게 */
   @media (max-width: 768px) {
     [data-testid="stHorizontalBlock"]:has(.stPlotlyChart) {flex-wrap: wrap;}
