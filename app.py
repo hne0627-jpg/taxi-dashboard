@@ -45,6 +45,8 @@ HELP = {
     "시간당수입": "한 시간 운행할 때마다 벌어들인 금액입니다.",
     "실차율": "전체 주행거리 중 손님을 태우고 달린 거리의 비율입니다.\n\n"
             "높을수록 빈 차로 다닌 시간이 적었다는 뜻입니다.",
+    "빈차율": "전체 주행거리 중 손님 없이 빈 차로 달린 거리의 비율입니다.\n\n"
+            "예전 시트의 '실차율' 칸이 사실 이 값이라, 이 숫자가 예전 기록과 같습니다.",
     "요일별수입": "요일별 평균 수입입니다.\n\n어떤 요일에 많이 버는지 확인할 수 있습니다.",
     "결제비율": "앱, 카드, 현금 결제 금액의 비율입니다.",
     "근무일": "선택한 기간 중 실제로 운행해 수입이 발생한 날의 수입니다.",
@@ -194,6 +196,7 @@ def add_metrics(df: pd.DataFrame) -> pd.DataFrame:
     d["Km당수입"] = safe_div(d["수입"], d["실차Km"])
     d["시간당수입"] = safe_div(d["수입"], d["운행시간"])
     d["실차율"] = safe_div(d["실차Km"], d["금일운행Km"]) * 100
+    d["빈차율"] = safe_div(d["빈차Km"], d["금일운행Km"]) * 100
     d["요일"] = d["날짜"].dt.weekday.map(lambda x: WEEKDAY[x])
     return d
 
@@ -354,61 +357,52 @@ with tab_input:
     st.header("오늘 운행 기록", anchor=False,
               help="기존에 작성하시던 항목만 입력하시면 됩니다.\n\n"
                    "실차율과 주행거리는 자동으로 계산됩니다.")
-    if st.session_state.pop("saved_ok", False):
-        st.success("기록이 저장되었습니다. 대시보드와 지난 기록에 바로 반영됩니다.")
+    if "flash" in st.session_state:
+        st.success(st.session_state.pop("flash"))
 
-    in_date = st.date_input("운행 날짜", value=date.today())
+    # 폼: 입력하는 동안에는 저장되지 않아 값이 지워지지 않음. 버튼 누를 때만 저장
+    with st.form("day_form", clear_on_submit=True):
+        in_date = st.date_input("운행 날짜", value=date.today())
+        수입 = st.number_input("수입 (원)", min_value=0, step=1000, value=0)
 
-    수입 = st.number_input("수입 (원)", min_value=0, step=1000, value=0, key="in_su")
+        st.subheader("운행 시간", anchor=False)
+        t1, t2 = st.columns(2)
+        운행시 = t1.number_input("시간", min_value=0, step=1, value=0)
+        운행분 = t2.number_input("분", min_value=0, max_value=59, step=5, value=0)
 
-    st.subheader("운행 시간", anchor=False)
-    t1, t2 = st.columns(2)
-    운행시 = t1.number_input("시간", min_value=0, step=1, value=0, key="in_h")
-    운행분 = t2.number_input("분", min_value=0, max_value=59, step=5, value=0, key="in_m")
-    운행시간 = round(운행시 + 운행분 / 60, 4)
+        st.subheader("가스 충전", anchor=False,
+                     help="주유한 날에만 입력하세요.\n\n"
+                          "가스 영수증의 금액과 충전량을 함께 입력하면, "
+                          "이 금액이 그날 지출로 반영됩니다.")
+        g1, g2 = st.columns(2)
+        지출 = g1.number_input("가스 금액 (원)", min_value=0, step=1000, value=0)
+        가스리터 = g2.number_input("충전량 (L)", min_value=0.0, step=1.0, value=0.0)
 
-    st.subheader("가스 충전", anchor=False,
-                 help="주유한 날에만 입력하세요.\n\n"
-                      "가스 영수증의 금액과 충전량을 함께 입력하면, "
-                      "이 금액이 그날 지출로 반영됩니다.")
-    g1, g2 = st.columns(2)
-    지출 = g1.number_input("가스 금액 (원)", min_value=0, step=1000, value=0, key="in_out")
-    가스리터 = g2.number_input("충전량 (L)", min_value=0.0, step=1.0, value=0.0,
-                            key="in_liter")
+        with st.expander("운행 거리"):
+            st.caption("실차율과 연비를 확인하려면 입력하세요.")
+            d1, d2 = st.columns(2)
+            실차Km = d1.number_input("실차 주행거리 (km)", min_value=0.0, step=1.0, value=0.0,
+                                    help="손님을 태우고 달린 거리입니다.")
+            금일Km = d2.number_input("오늘 총 주행거리 (km)", min_value=0.0, step=1.0, value=0.0,
+                                    help="손님을 태운 거리와 빈 차로 달린 거리를 합한 오늘 전체 거리입니다.")
+        with st.expander("결제수단별 수입"):
+            st.caption("결제수단별 금액을 확인하려면 입력하세요.")
+            p1, p2, p3 = st.columns(3)
+            앱 = p1.number_input("앱 (원)", min_value=0, step=1000, value=0)
+            카드 = p2.number_input("카드 (원)", min_value=0, step=1000, value=0)
+            현금 = p3.number_input("현금 (원)", min_value=0, step=1000, value=0)
 
-    with st.expander("운행 거리"):
-        st.caption("실차율과 연비를 확인하려면 입력하세요.")
-        d1, d2 = st.columns(2)
-        실차Km = d1.number_input("실차 주행거리 (km)", min_value=0.0, step=1.0,
-                                value=0.0, key="in_sil",
-                                help="손님을 태우고 달린 거리입니다.")
-        금일Km = d2.number_input("오늘 총 주행거리 (km)", min_value=0.0, step=1.0,
-                                value=0.0, key="in_day",
-                                help="손님을 태운 거리와 빈 차로 달린 거리를 합한 오늘 전체 거리입니다.")
-    with st.expander("결제수단별 수입"):
-        st.caption("결제수단별 금액을 확인하려면 입력하세요.")
-        p1, p2, p3 = st.columns(3)
-        앱 = p1.number_input("앱 (원)", min_value=0, step=1000, value=0, key="in_app")
-        카드 = p2.number_input("카드 (원)", min_value=0, step=1000, value=0, key="in_card")
-        현금 = p3.number_input("현금 (원)", min_value=0, step=1000, value=0, key="in_cash")
+        st.caption("숫자를 다 넣은 뒤 아래 버튼을 눌러 저장해주세요.")
+        submitted = st.form_submit_button("기록 저장하기", type="primary",
+                                          use_container_width=True)
 
-    # 자동 계산
-    빈차Km = max(금일Km - 실차Km, 0.0)
-    last_series = df_all["누적Km"].dropna() if not df_all.empty else pd.Series(dtype=float)
-    last_nujeok = int(last_series.iloc[-1]) if len(last_series) else 0
-    누적Km = last_nujeok + int(금일Km) if 금일Km else ""
-    순수익 = int(수입) - int(지출)
-    시간당순수익 = (순수익 / 운행시간) if 운행시간 else 0
-
-    st.divider()
-    st.subheader("오늘 예상 수익", anchor=False,
-                 help="입력한 값으로 지금 얼마 남는지 미리 계산해 보여줍니다.\n\n"
-                      "운행 거리를 입력하면 실차율과 주행거리도 함께 저장됩니다.")
-    m1, m2 = st.columns(2)
-    m1.metric("순수익", f"{순수익:,} 원")
-    m2.metric("시간당 순수익", f"{시간당순수익:,.0f} 원")
-
-    if st.button("기록 저장하기", type="primary", use_container_width=True):
+    if submitted:
+        운행시간 = round(운행시 + 운행분 / 60, 4)
+        빈차Km = max(금일Km - 실차Km, 0.0)
+        last_series = df_all["누적Km"].dropna() if not df_all.empty else pd.Series(dtype=float)
+        last_nujeok = int(last_series.iloc[-1]) if len(last_series) else 0
+        누적Km = last_nujeok + int(금일Km) if 금일Km else ""
+        순수익 = int(수입) - int(지출)
         if 수입 == 0 and 금일Km == 0 and 지출 == 0:
             st.warning("입력한 값이 없습니다. 수입을 입력한 후 저장해주세요.")
         else:
@@ -423,10 +417,7 @@ with tab_input:
             }
             ok, msg = save_row(row)
             if ok:
-                for k in ["in_su", "in_h", "in_m", "in_sil", "in_day", "in_out",
-                          "in_app", "in_card", "in_cash", "in_liter"]:
-                    st.session_state.pop(k, None)
-                st.session_state["saved_ok"] = True
+                st.session_state["flash"] = f"저장되었습니다. 오늘 순수익 {순수익:,}원."
                 st.rerun()
             else:
                 st.error(msg)
@@ -482,10 +473,10 @@ with tab_dash:
             return f"{cur - p:+,}" if p else None
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("총 수입", f"{earned:,}",
+        c1.metric("총 수입", f"{earned:,}원",
                   delta=delta(earned, lambda d: int(d["수입"].fillna(0).sum())),
                   help="이번 달 수입의 합계입니다. 아래 숫자는 지난달과 비교한 증감입니다.")
-        c2.metric("순수익", f"{net:,}",
+        c2.metric("순수익", f"{net:,}원",
                   delta=delta(net, lambda d: int(d["순수익"].sum())),
                   help=HELP["누적순수익"])
         c3.metric("근무일", f"{work_days}일", help=HELP["근무일"])
@@ -500,13 +491,15 @@ with tab_dash:
             return "-" if v is None else f"{v:,.{dec}f}{suffix}"
 
         e1, e2, e3 = st.columns(3)
-        e1.metric("시간당 순수익", fmt(avg("시간당순수익")), help=HELP["시간당순수익"])
-        e2.metric("시간당 수입", fmt(avg("시간당수입")), help=HELP["시간당수입"])
-        e3.metric("1km당 수입", fmt(avg("Km당수입")), help=HELP["Km당수입"])
-        e4, e5, e6 = st.columns(3)
+        e1.metric("시간당 순수익", fmt(avg("시간당순수익"), 0, "원"), help=HELP["시간당순수익"])
+        e2.metric("시간당 수입", fmt(avg("시간당수입"), 0, "원"), help=HELP["시간당수입"])
+        e3.metric("1km당 수입", fmt(avg("Km당수입"), 0, "원"), help=HELP["Km당수입"])
+        e4, e5 = st.columns(2)
         e4.metric("실차율", fmt(avg("실차율"), 0, "%"), help=HELP["실차율"])
-        e5.metric("연비", fmt(avg("연비"), 1, " km/L"), help=HELP["연비"])
-        e6.metric("리터당 가스비", fmt(avg("리터당단가")), help=HELP["리터당단가"])
+        e5.metric("빈차율", fmt(avg("빈차율"), 0, "%"), help=HELP["빈차율"])
+        e6, e7 = st.columns(2)
+        e6.metric("연비", fmt(avg("연비"), 1, " km/L"), help=HELP["연비"])
+        e7.metric("리터당 가스비", fmt(avg("리터당단가"), 0, "원"), help=HELP["리터당단가"])
 
         st.divider()
 
@@ -606,15 +599,39 @@ with tab_log:
 
         f = df_all[(df_all["날짜"].dt.date >= s) & (df_all["날짜"].dt.date <= e)]
         k1, k2, k3 = st.columns(3)
-        k1.metric("수입 합계", f"{int(f['수입'].fillna(0).sum()):,}")
-        k2.metric("순수익 합계", f"{int(f['순수익'].sum()):,}", help=HELP["순수익"])
+        k1.metric("수입 합계", f"{int(f['수입'].fillna(0).sum()):,}원")
+        k2.metric("순수익 합계", f"{int(f['순수익'].sum()):,}원", help=HELP["순수익"])
         k3.metric("근무일", f"{int((f['수입'].fillna(0) > 0).sum())}일", help=HELP["근무일"])
 
-        show = f.copy()
-        show["날짜"] = show["날짜"].dt.strftime("%m/%d") + "(" + show["요일"] + ")"
-        view_cols = ["날짜", "수입", "지출", "순수익", "운행시간",
-                     "실차Km", "금일운행Km", "실차율", "앱", "카드", "현금"]
-        rename = {"운행시간": "운행 시간", "실차Km": "실차 주행거리",
-                  "금일운행Km": "총 주행거리", "실차율": "실차율(%)"}
-        st.dataframe(show[view_cols].rename(columns=rename),
-                     use_container_width=True, hide_index=True)
+        # 표: 단위 붙여서 보기 좋게 (돈은 콤마, 퍼센트는 정수, 시간은 N시간 M분)
+        def won(v):
+            return f"{int(v):,}" if pd.notna(v) and v != "" else ""
+
+        def pct(v):
+            return f"{v:.0f}%" if pd.notna(v) else ""
+
+        def hm(v):
+            if pd.isna(v) or v == "":
+                return ""
+            h = int(v)
+            mm = round((v - h) * 60)
+            return f"{h}시간 {mm}분" if mm else f"{h}시간"
+
+        def km(v):
+            return f"{v:.0f}" if pd.notna(v) and v != "" else ""
+
+        show = pd.DataFrame({
+            "날짜": f["날짜"].dt.strftime("%m/%d") + "(" + f["요일"] + ")",
+            "수입": f["수입"].map(won),
+            "지출": f["지출"].map(won),
+            "순수익": f["순수익"].map(won),
+            "운행 시간": f["운행시간"].map(hm),
+            "실차(km)": f["실차Km"].map(km),
+            "총주행(km)": f["금일운행Km"].map(km),
+            "실차율": f["실차율"].map(pct),
+            "빈차율": f["빈차율"].map(pct),
+            "앱": f["앱"].map(won),
+            "카드": f["카드"].map(won),
+            "현금": f["현금"].map(won),
+        })
+        st.dataframe(show, use_container_width=True, hide_index=True)
