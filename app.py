@@ -662,4 +662,6 @@ with tab_log:
             "카드": f["카드"].map(won),
             "현금": f["현금"].map(won),
         })
-        st.dataframe(show, use_container_width=True, hide_index=True)
+        # 행 수에 맞춰 높이 지정: 한 달치 정도는 통째로 펼쳐 세로 스크롤 걸림 방지
+        tbl_h = min(38 + len(show) * 36 + 2, 1300) if len(show) else 120
+        st.dataframe(show, use_container_width=True, hide_index=True, height=tbl_h)
