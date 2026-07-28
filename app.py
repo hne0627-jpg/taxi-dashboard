@@ -7,6 +7,7 @@
 
 import json
 import base64
+import calendar
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -361,6 +362,18 @@ with tab_input:
     if "flash" in st.session_state:
         st.success(st.session_state.pop("flash"))
 
+    # 이번 달 진행 상황 (기록하러 들어오면 한 줄로 한눈에)
+    _tm = date.today().strftime("%Y-%m")
+    _cur = df_all[df_all["날짜"].dt.strftime("%Y-%m") == _tm] if not df_all.empty else df_all
+    _income = int(_cur["수입"].fillna(0).sum()) if not _cur.empty else 0
+    _days = int((_cur["수입"].fillna(0) > 0).sum()) if not _cur.empty else 0
+    _pct = round(_income / goal * 100) if goal else 0
+    st.markdown(
+        f"<div style='background:#eef4fd;border:1px solid #d8e6fb;border-radius:12px;"
+        f"padding:10px 14px;margin:2px 0 6px;font-size:1rem;color:#1b1b1a;'>"
+        f"이번 달 <b>{_income:,}원</b> 벌었어요. 목표의 <b>{_pct}%</b>, {_days}일 근무했어요."
+        f"</div>", unsafe_allow_html=True)
+
     # 폼: 입력하는 동안에는 저장되지 않아 값이 지워지지 않음. 버튼 누를 때만 저장
     with st.form("day_form", clear_on_submit=True):
         in_date = st.date_input("운행 날짜", value=date.today())
@@ -465,6 +478,20 @@ with tab_dash:
         gfig.update_layout(height=190, margin=dict(l=24, r=24, t=6, b=0),
                            font=dict(family=FONT))
         st.plotly_chart(gfig, use_container_width=True, config=CHART_CFG)
+
+        # 목표 페이스 안내 (이번 달이면 남은 기간 하루 필요액까지)
+        today = date.today()
+        remain = goal - earned
+        sel_y, sel_m = int(sel[:4]), int(sel[5:7])
+        if remain <= 0:
+            st.success(f"목표를 {abs(remain):,}원 넘겼어요. 잘하고 계세요!")
+        elif (sel_y, sel_m) == (today.year, today.month):
+            days_left = calendar.monthrange(sel_y, sel_m)[1] - today.day + 1
+            per_day = remain / days_left if days_left else remain
+            st.info(f"목표까지 {remain:,}원 남았어요. "
+                    f"남은 {days_left}일 동안 하루 {per_day:,.0f}원이면 달성해요.")
+        else:
+            st.caption(f"이 달은 목표보다 {remain:,}원 적었어요.")
 
         # 이번 달 요약
         def delta(cur, sumfn):
