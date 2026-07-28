@@ -73,7 +73,8 @@ GRID = "#ecebe6"
 AXIS = "#c3c2b7"
 INK = "#52514e"
 FONT = "Pretendard, system-ui, sans-serif"
-CHART_CFG = {"displayModeBar": False}
+# staticPlot: 그래프가 터치(확대/이동)를 가로채지 않게 정지 상태로. 페이지 스크롤이 자연스러워짐
+CHART_CFG = {"displayModeBar": False, "staticPlot": True}
 
 
 def style_fig(fig, height=240, day_axis=False):
@@ -91,7 +92,7 @@ def style_fig(fig, height=240, day_axis=False):
     fig.update_xaxes(showgrid=False, showline=True, linecolor=AXIS,
                      tickcolor=AXIS)
     fig.update_yaxes(showgrid=True, gridcolor=GRID, zeroline=False,
-                     showline=False, tickformat=",")
+                     showline=False, tickformat=",d", rangemode="tozero")
     if day_axis:
         fig.update_xaxes(tickformat="%d", hoverformat="%m월 %d일",
                          nticks=12, ticklabelmode="period")
