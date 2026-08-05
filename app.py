@@ -33,7 +33,7 @@ CSV_FALLBACK = "migrated_taxi_2026.csv"
 
 # 각 지표 도움말 (물음표 눌렀을 때 뜨는 설명)
 HELP = {
-    "순수익": "수입에서 가스비를 포함한 모든 지출을 뺀 금액입니다.\n\n"
+    "순수익": "수입에서 지출(가스비)을 뺀 금액입니다.\n\n"
             "하루에 실제로 손에 남은 돈입니다.",
     "시간당순수익": "한 시간 운행으로 실제 남긴 금액입니다.\n\n"
                 "순수익을 운행 시간으로 나눠 계산합니다.",
@@ -350,9 +350,7 @@ tab_input, tab_dash, tab_log = st.tabs(["✏️ 기록하기", "📊 대시보�
 
 # ---- 탭 1: 기록 입력 (수동) -------------------------------------------------
 with tab_input:
-    st.header("오늘 운행 기록", anchor=False,
-              help="기존에 작성하시던 항목만 입력하시면 됩니다.\n\n"
-                   "실차율과 주행거리는 자동으로 계산됩니다.")
+    st.header("오늘 운행 기록", anchor=False)
     if "flash" in st.session_state:
         st.success(st.session_state.pop("flash"))
 
@@ -395,8 +393,8 @@ with tab_input:
     # 폼 이름에 날짜를 넣어, 날짜가 바뀌면 폼이 새로 그려지며 그날 값으로 채워짐
     # 원본 파일 순서대로 손입력 칸만 배치 (공차/누적/실차율은 자동이라 표에서 확인)
     with st.form(f"day_form_{in_date.isoformat()}", clear_on_submit=False):
-        실차Km = st.number_input("실차 주행거리 (km)", min_value=0.0, step=1.0, value=_v("실차Km"),
-                                help="손님을 태우고 달린 거리예요.")
+        실차Km = st.number_input("실차 주행거리 (손님 태운 거리, km)", min_value=0.0, step=1.0,
+                                value=_v("실차Km"))
 
         st.subheader("운행 시간", anchor=False)
         t1, t2 = st.columns(2)
@@ -404,10 +402,8 @@ with tab_input:
         운행분 = t2.number_input("분", min_value=0, max_value=59, step=5, value=_mm)
 
         수입 = st.number_input("수입 (원)", min_value=0, step=1000, value=int(_v("수입")))
-        지출 = st.number_input("지출 (가스 금액, 원)", min_value=0, step=1000, value=int(_v("지출")),
-                              help="주유한 날 가스 영수증 금액을 넣으세요.\n\n이 금액이 그날 지출로 반영됩니다.")
-        가스리터 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=_v("가스리터"),
-                                help="주유한 날 넣은 가스 양이에요. 연비 계산에 쓰여요.")
+        지출 = st.number_input("지출 (가스 금액, 원)", min_value=0, step=1000, value=int(_v("지출")))
+        가스리터 = st.number_input("충전량 (주유한 날, L)", min_value=0.0, step=1.0, value=_v("가스리터"))
 
         st.subheader("결제수단별 수입", anchor=False)
         p1, p2, p3 = st.columns(3)
@@ -415,9 +411,8 @@ with tab_input:
         카드 = p2.number_input("카드 (원)", min_value=0, step=1000, value=int(_v("카드")))
         현금 = p3.number_input("현금 (원)", min_value=0, step=1000, value=int(_v("현금")))
 
-        금일Km = st.number_input("총 주행거리 (km)", min_value=0.0, step=1.0, value=_v("금일운행Km"),
-                                help="오늘 실제로 달린 전체 거리예요 (실차 + 공차).\n\n"
-                                     "공차 주행거리는 여기서 실차를 빼서 자동 계산됩니다.")
+        금일Km = st.number_input("총 주행거리 (실차 + 공차, km)", min_value=0.0, step=1.0,
+                                value=_v("금일운행Km"))
 
         st.caption("공차 주행거리, 누적 주행거리, 실차율은 저장하면 자동으로 계산돼 "
                    "'지난 기록'에서 볼 수 있어요.")
@@ -459,6 +454,25 @@ with tab_dash:
     if df_all.empty:
         st.warning("표시할 데이터가 아직 없습니다.")
     else:
+        with st.expander("용어 설명 (실차율, 공차율, 연비 등)"):
+            st.markdown(
+                "**주행거리**\n"
+                "- 실차 주행거리: 손님을 태우고 달린 거리 (직접 입력)\n"
+                "- 공차 주행거리: 빈 차로 달린 거리 (자동, 총주행에서 실차 뺀 값)\n"
+                "- 총 주행거리: 그날 전체 거리, 실차와 공차를 합한 값 (직접 입력)\n"
+                "- 누적 주행거리: 차 전체 누적 거리, 오도미터 값 (자동)\n\n"
+                "**수익**\n"
+                "- 순수익: 수입에서 지출(가스비)을 뺀, 하루에 실제로 남은 돈\n"
+                "- 시간당 순수익: 순수익을 운행 시간으로 나눈 값\n"
+                "- 시간당 수입: 수입을 운행 시간으로 나눈 값\n"
+                "- 1km당 수입: 수입을 실차 주행거리로 나눈 값\n\n"
+                "**효율**\n"
+                "- 실차율: 총 주행거리 중 실차 거리의 비율 (높을수록 좋음)\n"
+                "- 공차율: 총 주행거리 중 공차 거리의 비율 (예전 시트 '실차율' 값과 같음)\n"
+                "- 연비: 가스 1리터로 달린 거리, 총 주행 기준 (클수록 좋음)\n"
+                "- 리터당 가스비: 지출을 충전량으로 나눈 값, 가스 1리터 가격\n\n"
+                "**목표**\n"
+                "- 목표 달성률: 이번 달 목표 금액 대비 지금까지의 수입")
         months = sorted(df_all["날짜"].dt.strftime("%Y-%m").unique(), reverse=True)
         labels = {mk: f"{int(mk[:4])}년 {int(mk[5:7])}월" for mk in months}
         sel = st.selectbox("월 선택", months, index=0,
@@ -478,7 +492,7 @@ with tab_dash:
 
         # 목표 게이지 (월은 위 선택칸으로 끝, 여기선 반복 안 함)
         st.subheader(f"이번 달 목표 달성률 {pct}% (목표 {goal:,}원)",
-                     help=HELP["목표게이지"], anchor=False)
+                     anchor=False)
         gfig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=earned,
@@ -520,12 +534,10 @@ with tab_dash:
 
         c1, c2, c3 = st.columns(3)
         c1.metric("총 수입", f"{earned:,}원",
-                  delta=delta(earned, lambda d: int(d["수입"].fillna(0).sum())),
-                  help="이번 달 수입의 합계입니다. 아래 숫자는 지난달과 비교한 증감입니다.")
+                  delta=delta(earned, lambda d: int(d["수입"].fillna(0).sum())))
         c2.metric("순수익", f"{net:,}원",
-                  delta=delta(net, lambda d: int(d["순수익"].sum())),
-                  help=HELP["누적순수익"])
-        c3.metric("근무일", f"{work_days}일", help=HELP["근무일"])
+                  delta=delta(net, lambda d: int(d["순수익"].sum())))
+        c3.metric("근무일", f"{work_days}일")
 
         st.subheader("효율 지표", anchor=False)
 
@@ -537,21 +549,20 @@ with tab_dash:
             return "-" if v is None else f"{v:,.{dec}f}{suffix}"
 
         e1, e2, e3 = st.columns(3)
-        e1.metric("시간당 순수익", fmt(avg("시간당순수익"), 0, "원"), help=HELP["시간당순수익"])
-        e2.metric("시간당 수입", fmt(avg("시간당수입"), 0, "원"), help=HELP["시간당수입"])
-        e3.metric("1km당 수입", fmt(avg("Km당수입"), 0, "원"), help=HELP["Km당수입"])
+        e1.metric("시간당 순수익", fmt(avg("시간당순수익"), 0, "원"))
+        e2.metric("시간당 수입", fmt(avg("시간당수입"), 0, "원"))
+        e3.metric("1km당 수입", fmt(avg("Km당수입"), 0, "원"))
         e4, e5 = st.columns(2)
-        e4.metric("실차율", fmt(avg("실차율"), 0, "%"), help=HELP["실차율"])
-        e5.metric("공차율", fmt(avg("공차율"), 0, "%"), help=HELP["공차율"])
+        e4.metric("실차율", fmt(avg("실차율"), 0, "%"))
+        e5.metric("공차율", fmt(avg("공차율"), 0, "%"))
         e6, e7 = st.columns(2)
-        e6.metric("연비", fmt(avg("연비"), 1, " km/L"), help=HELP["연비"])
-        e7.metric("리터당 가스비", fmt(avg("리터당단가"), 0, "원"), help=HELP["리터당단가"])
+        e6.metric("연비", fmt(avg("연비"), 1, " km/L"))
+        e7.metric("리터당 가스비", fmt(avg("리터당단가"), 0, "원"))
 
         st.divider()
 
         # 일별 순수익 (전체 너비). 운행 안 한 날은 회색 점으로 표시
-        st.subheader("날짜별 순수익", anchor=False,
-                     help="날짜별 순수익입니다.\n\n막대가 높을수록 그날 많이 남았다는 뜻입니다.")
+        st.subheader("날짜별 순수익", anchor=False)
         bar = px.bar(m, x="날짜", y="순수익", color_discrete_sequence=[PRIMARY])
         bar.update_traces(marker=dict(cornerradius=5),
                           hovertemplate="순수익 %{y:,}원<extra></extra>")
@@ -565,7 +576,7 @@ with tab_dash:
         st.caption("막대가 없고 회색 점만 있는 날은 운행하지 않은 쉬는 날입니다.")
 
         # 실차율 추이 (전체 너비). 운행한 날만 이어서 표시
-        st.subheader("실차율 추이", help=HELP["실차율"], anchor=False)
+        st.subheader("실차율 추이", anchor=False)
         line = px.line(m, x="날짜", y="실차율", markers=True,
                        color_discrete_sequence=[PRIMARY])
         line.update_traces(line_width=2, marker_size=6, connectgaps=True,
@@ -578,7 +589,7 @@ with tab_dash:
         # 요일별 평균 수입 + 결제수단 비율 (넓은 화면에선 나란히, 좁으면 위아래)
         left, right = st.columns(2)
         with left:
-            st.subheader("요일별 평균 수입", help=HELP["요일별수입"], anchor=False)
+            st.subheader("요일별 평균 수입", anchor=False)
             wk = (m[m["수입"].fillna(0) > 0].groupby("요일")["수입"].mean()
                   .reindex(WEEKDAY).reset_index())
             wk["수입"] = wk["수입"].fillna(0)
@@ -589,7 +600,7 @@ with tab_dash:
             st.plotly_chart(wbar, use_container_width=True, config=CHART_CFG)
             st.caption("막대가 없는 요일은 이 달에 운행하지 않은 요일입니다.")
         with right:
-            st.subheader("결제수단 비율", help=HELP["결제비율"], anchor=False)
+            st.subheader("결제수단 비율", anchor=False)
             pay = pd.DataFrame({
                 "수단": ["앱", "카드", "현금"],
                 "금액": [m["앱"].fillna(0).sum(), m["카드"].fillna(0).sum(),
@@ -646,8 +657,8 @@ with tab_log:
         f = df_all[(df_all["날짜"].dt.date >= s) & (df_all["날짜"].dt.date <= e)]
         k1, k2, k3 = st.columns(3)
         k1.metric("수입 합계", f"{int(f['수입'].fillna(0).sum()):,}원")
-        k2.metric("순수익 합계", f"{int(f['순수익'].sum()):,}원", help=HELP["순수익"])
-        k3.metric("근무일", f"{int((f['수입'].fillna(0) > 0).sum())}일", help=HELP["근무일"])
+        k2.metric("순수익 합계", f"{int(f['순수익'].sum()):,}원")
+        k3.metric("근무일", f"{int((f['수입'].fillna(0) > 0).sum())}일")
 
         # 표: 단위 붙여서 보기 좋게 (돈은 콤마, 퍼센트는 정수, 시간은 N시간 M분)
         def won(v):
