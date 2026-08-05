@@ -415,8 +415,8 @@ with tab_input:
         카드 = p2.number_input("카드 (원)", min_value=0, step=1000, value=int(_v("카드")))
         현금 = p3.number_input("현금 (원)", min_value=0, step=1000, value=int(_v("현금")))
 
-        금일Km = st.number_input("최종 주행거리 (km)", min_value=0.0, step=1.0, value=_v("금일운행Km"),
-                                help="오늘 실제로 달린 전체 거리예요.\n\n"
+        금일Km = st.number_input("총 주행거리 (km)", min_value=0.0, step=1.0, value=_v("금일운행Km"),
+                                help="오늘 실제로 달린 전체 거리예요 (실차 + 공차).\n\n"
                                      "공차 주행거리는 여기서 실차를 빼서 자동 계산됩니다.")
 
         st.caption("공차 주행거리, 누적 주행거리, 실차율은 저장하면 자동으로 계산돼 "
@@ -664,33 +664,56 @@ with tab_log:
             return f"{h}시간 {mm}분" if mm else f"{h}시간"
 
         def km(v):
-            return f"{v:.0f}" if pd.notna(v) and v != "" else ""
+            return f"{v:,.0f}" if pd.notna(v) and v != "" else ""
 
         def lit(v):
             return f"{v:.1f}" if pd.notna(v) and v != "" else ""
 
-        # 원본 파일 순서대로: 실차, 운행시간, 수입, 지출, 충전량, 앱, 카드, 현금,
-        # 최종(금일), 공차(빈차), 누적. 실차율/빈차율은 참고로 뒤에.
-        show = pd.DataFrame({
-            "날짜": f["날짜"].dt.strftime("%m/%d") + "(" + f["요일"] + ")",
-            "실차 주행(km)": f["실차Km"].map(km),
-            "운행 시간": f["운행시간"].map(hm),
-            "수입": f["수입"].map(won),
-            "지출": f["지출"].map(won),
-            "순수익": f["순수익"].map(won),
-            "충전량(L)": f["가스리터"].map(lit),
-            "앱": f["앱"].map(won),
-            "카드": f["카드"].map(won),
-            "현금": f["현금"].map(won),
-            "최종 주행(km)": f["금일운행Km"].map(km),
-            "공차 주행(km)": f["빈차Km"].map(km),
-            "누적 주행(km)": f["누적Km"].map(km),
-            "실차율": f["실차율"].map(pct),
-            "빈차율": f["빈차율"].map(pct),
-        })
-        st.caption("표를 옆으로 밀면 나머지 항목이 보여요. 날짜 칸은 고정돼 있어요. "
-                   "공차, 누적, 실차율, 빈차율은 자동 계산된 값이에요.")
-        # 행 수에 맞춰 높이 지정: 한 달치는 통째로 펼쳐 세로 스크롤 걸림 방지
-        tbl_h = min(38 + len(show) * 36 + 2, 1300) if len(show) else 120
-        st.dataframe(show, use_container_width=True, hide_index=True, height=tbl_h,
-                     column_config={"날짜": st.column_config.Column(pinned=True)})
+        def W(v):  # 돈 (없으면 -)
+            s = won(v)
+            return s + "원" if s else "-"
+
+        def K(v):  # 거리 (없으면 -)
+            s = km(v)
+            return s + "km" if s else "-"
+
+        def cell(lab, val):
+            return (f"<div style='font-size:0.95rem;color:#6b6a66;padding:1px 0'>{lab} "
+                    f"<b style='color:#1b1b1a'>{val}</b></div>")
+
+        # 카드 뷰: 하루씩 위아래로 (모바일에서 옆으로 안 밀어도 됨). 최근 날짜가 위
+        st.caption("최근 날짜가 위에 있어요. 운행한 날은 카드로 자세히, 쉬는 날은 한 줄로 보여요.")
+        cards = []
+        for _, r in f.sort_values("날짜", ascending=False).iterrows():
+            dstr = f"{r['날짜'].month}월 {r['날짜'].day}일 ({r['요일']})"
+            inc = float(r["수입"]) if pd.notna(r["수입"]) else 0.0
+            if inc <= 0:
+                cards.append(
+                    "<div style='border:1px solid #ebe9e3;border-radius:12px;background:#fbfbf9;"
+                    "padding:9px 14px;margin-bottom:8px'>"
+                    f"<b style='color:#8a8880'>{dstr}</b>"
+                    "<span style='color:#a8a69e;margin-left:8px'>운행 안 함</span></div>")
+                continue
+            net = int(r["순수익"]) if pd.notna(r["순수익"]) else 0
+            nc = "#2a78d6" if net >= 0 else "#d03b3b"
+            body = "".join([
+                cell("수입", W(r["수입"])), cell("지출", W(r["지출"])),
+                cell("운행", hm(r["운행시간"]) or "-"),
+                cell("실차", K(r["실차Km"])), cell("공차", K(r["빈차Km"])),
+                cell("총주행", K(r["금일운행Km"])), cell("실차율", pct(r["실차율"]) or "-"),
+                cell("충전", (lit(r["가스리터"]) + "L") if lit(r["가스리터"]) else "-"),
+                cell("앱", W(r["앱"])), cell("카드", W(r["카드"])), cell("현금", W(r["현금"])),
+                cell("누적", K(r["누적Km"])),
+            ])
+            cards.append(
+                "<div style='border:1px solid #e7e5df;border-radius:14px;background:#fff;"
+                "padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 2px rgba(20,20,20,0.04)'>"
+                "<div style='display:flex;justify-content:space-between;align-items:baseline;"
+                "margin-bottom:6px'>"
+                f"<span style='font-size:1.08rem;font-weight:800;color:#1b1b1a'>{dstr}</span>"
+                f"<span style='font-size:1rem;font-weight:700;color:{nc}'>순수익 {net:,}원</span></div>"
+                f"<div style='display:grid;grid-template-columns:1fr 1fr;column-gap:14px'>{body}</div>"
+                "</div>")
+        st.markdown(
+            "".join(cards) or "<div style='color:#8a8880'>이 기간에 기록이 없어요.</div>",
+            unsafe_allow_html=True)
