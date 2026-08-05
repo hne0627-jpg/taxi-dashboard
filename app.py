@@ -390,11 +390,14 @@ with tab_input:
     if editing:
         st.info("이 날짜에 이미 기록이 있어요. 아래 값을 고쳐서 저장하면 수정됩니다.")
 
-    # 폼 이름에 날짜를 넣어, 날짜가 바뀌면 폼이 새로 그려지며 그날 값으로 채워짐
-    # 원본 파일 순서대로 손입력 칸만 배치 (공차/누적/실차율은 자동이라 표에서 확인)
+    # 폼: 관련 항목끼리 묶어서 배치 (거리끼리, 가스끼리). 공차/누적/실차율은 자동
     with st.form(f"day_form_{in_date.isoformat()}", clear_on_submit=False):
+        st.subheader("주행거리", anchor=False)
         실차Km = st.number_input("실차 주행거리 (손님 태운 거리, km)", min_value=0.0, step=1.0,
                                 value=_v("실차Km"))
+        금일Km = st.number_input("총 주행거리 (실차 + 공차, km)", min_value=0.0, step=1.0,
+                                value=_v("금일운행Km"))
+        st.caption("공차 주행거리는 총 주행거리에서 실차를 빼서 자동으로 계산돼요.")
 
         st.subheader("운행 시간", anchor=False)
         t1, t2 = st.columns(2)
@@ -402,8 +405,6 @@ with tab_input:
         운행분 = t2.number_input("분", min_value=0, max_value=59, step=5, value=_mm)
 
         수입 = st.number_input("수입 (원)", min_value=0, step=1000, value=int(_v("수입")))
-        지출 = st.number_input("지출 (가스 금액, 원)", min_value=0, step=1000, value=int(_v("지출")))
-        가스리터 = st.number_input("충전량 (주유한 날, L)", min_value=0.0, step=1.0, value=_v("가스리터"))
 
         st.subheader("결제수단별 수입", anchor=False)
         p1, p2, p3 = st.columns(3)
@@ -411,11 +412,10 @@ with tab_input:
         카드 = p2.number_input("카드 (원)", min_value=0, step=1000, value=int(_v("카드")))
         현금 = p3.number_input("현금 (원)", min_value=0, step=1000, value=int(_v("현금")))
 
-        금일Km = st.number_input("총 주행거리 (실차 + 공차, km)", min_value=0.0, step=1.0,
-                                value=_v("금일운행Km"))
-
-        st.caption("공차 주행거리, 누적 주행거리, 실차율은 저장하면 자동으로 계산돼 "
-                   "'지난 기록'에서 볼 수 있어요.")
+        st.subheader("가스 (주유한 날만)", anchor=False)
+        지출 = st.number_input("지출 (가스 금액, 원)", min_value=0, step=1000, value=int(_v("지출")))
+        가스리터 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=_v("가스리터"))
+        st.caption("누적 주행거리와 실차율도 저장하면 자동으로 계산돼 '지난 기록'에서 볼 수 있어요.")
         _btn = "수정 저장하기" if editing else "기록 저장하기"
         submitted = st.form_submit_button(_btn, type="primary", use_container_width=True)
 
