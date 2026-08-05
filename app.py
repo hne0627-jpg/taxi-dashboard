@@ -404,18 +404,19 @@ with tab_input:
         운행시 = t1.number_input("시간", min_value=0, step=1, value=_hh)
         운행분 = t2.number_input("분", min_value=0, max_value=59, step=5, value=_mm)
 
+        st.subheader("수입", anchor=False)
         수입 = st.number_input("수입 (원)", min_value=0, step=1000, value=int(_v("수입")))
-
-        st.subheader("결제수단별 수입", anchor=False)
+        st.caption("아래는 결제수단별로 나눈 금액이에요 (앱, 카드, 현금).")
         p1, p2, p3 = st.columns(3)
         앱 = p1.number_input("앱 (원)", min_value=0, step=1000, value=int(_v("앱")))
         카드 = p2.number_input("카드 (원)", min_value=0, step=1000, value=int(_v("카드")))
         현금 = p3.number_input("현금 (원)", min_value=0, step=1000, value=int(_v("현금")))
 
         st.subheader("가스 (주유한 날만)", anchor=False)
-        지출 = st.number_input("지출 (가스 금액, 원)", min_value=0, step=1000, value=int(_v("지출")))
+        지출 = st.number_input("가스 금액 (원)", min_value=0, step=1000, value=int(_v("지출")))
         가스리터 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=_v("가스리터"))
-        st.caption("누적 주행거리와 실차율도 저장하면 자동으로 계산돼 '지난 기록'에서 볼 수 있어요.")
+        st.caption("가스 금액이 그날 지출로 반영돼요. 누적 주행거리와 실차율도 "
+                   "저장하면 자동으로 계산돼 '지난 기록'에서 볼 수 있어요.")
         _btn = "수정 저장하기" if editing else "기록 저장하기"
         submitted = st.form_submit_button(_btn, type="primary", use_container_width=True)
 
