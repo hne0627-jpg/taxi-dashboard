@@ -393,38 +393,34 @@ with tab_input:
         st.info("이 날짜에 이미 기록이 있어요. 아래 값을 고쳐서 저장하면 수정됩니다.")
 
     # 폼 이름에 날짜를 넣어, 날짜가 바뀌면 폼이 새로 그려지며 그날 값으로 채워짐
+    # 원본 파일 순서대로 손입력 칸만 배치 (공차/누적/실차율은 자동이라 표에서 확인)
     with st.form(f"day_form_{in_date.isoformat()}", clear_on_submit=False):
-        수입 = st.number_input("수입 (원)", min_value=0, step=1000, value=int(_v("수입")))
+        실차Km = st.number_input("실차 주행거리 (km)", min_value=0.0, step=1.0, value=_v("실차Km"),
+                                help="손님을 태우고 달린 거리예요.")
 
         st.subheader("운행 시간", anchor=False)
         t1, t2 = st.columns(2)
         운행시 = t1.number_input("시간", min_value=0, step=1, value=_hh)
         운행분 = t2.number_input("분", min_value=0, max_value=59, step=5, value=_mm)
 
-        st.subheader("가스 충전", anchor=False,
-                     help="주유한 날에만 입력하세요.\n\n"
-                          "가스 영수증의 금액과 충전량을 함께 입력하면, "
-                          "이 금액이 그날 지출로 반영됩니다.")
-        g1, g2 = st.columns(2)
-        지출 = g1.number_input("가스 금액 (원)", min_value=0, step=1000, value=int(_v("지출")))
-        가스리터 = g2.number_input("충전량 (L)", min_value=0.0, step=1.0, value=_v("가스리터"))
+        수입 = st.number_input("수입 (원)", min_value=0, step=1000, value=int(_v("수입")))
+        지출 = st.number_input("지출 (가스 금액, 원)", min_value=0, step=1000, value=int(_v("지출")),
+                              help="주유한 날 가스 영수증 금액을 넣으세요.\n\n이 금액이 그날 지출로 반영됩니다.")
+        가스리터 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=_v("가스리터"),
+                                help="주유한 날 넣은 가스 양이에요. 연비 계산에 쓰여요.")
 
-        _has_km = _v("실차Km") > 0 or _v("금일운행Km") > 0
-        with st.expander("운행 거리", expanded=_has_km):
-            st.caption("실차율과 연비를 확인하려면 입력하세요.")
-            d1, d2 = st.columns(2)
-            실차Km = d1.number_input("실차 주행거리 (km)", min_value=0.0, step=1.0, value=_v("실차Km"),
-                                    help="손님을 태우고 달린 거리입니다.")
-            금일Km = d2.number_input("오늘 총 주행거리 (km)", min_value=0.0, step=1.0, value=_v("금일운행Km"),
-                                    help="손님을 태운 거리와 빈 차로 달린 거리를 합한 오늘 전체 거리입니다.")
-        _has_pay = _v("앱") > 0 or _v("카드") > 0 or _v("현금") > 0
-        with st.expander("결제수단별 수입", expanded=_has_pay):
-            st.caption("결제수단별 금액을 확인하려면 입력하세요.")
-            p1, p2, p3 = st.columns(3)
-            앱 = p1.number_input("앱 (원)", min_value=0, step=1000, value=int(_v("앱")))
-            카드 = p2.number_input("카드 (원)", min_value=0, step=1000, value=int(_v("카드")))
-            현금 = p3.number_input("현금 (원)", min_value=0, step=1000, value=int(_v("현금")))
+        st.subheader("결제수단별 수입", anchor=False)
+        p1, p2, p3 = st.columns(3)
+        앱 = p1.number_input("앱 (원)", min_value=0, step=1000, value=int(_v("앱")))
+        카드 = p2.number_input("카드 (원)", min_value=0, step=1000, value=int(_v("카드")))
+        현금 = p3.number_input("현금 (원)", min_value=0, step=1000, value=int(_v("현금")))
 
+        금일Km = st.number_input("최종 주행거리 (km)", min_value=0.0, step=1.0, value=_v("금일운행Km"),
+                                help="오늘 실제로 달린 전체 거리예요.\n\n"
+                                     "공차 주행거리는 여기서 실차를 빼서 자동 계산됩니다.")
+
+        st.caption("공차 주행거리, 누적 주행거리, 실차율은 저장하면 자동으로 계산돼 "
+                   "'지난 기록'에서 볼 수 있어요.")
         _btn = "수정 저장하기" if editing else "기록 저장하기"
         submitted = st.form_submit_button(_btn, type="primary", use_container_width=True)
 
@@ -670,20 +666,31 @@ with tab_log:
         def km(v):
             return f"{v:.0f}" if pd.notna(v) and v != "" else ""
 
+        def lit(v):
+            return f"{v:.1f}" if pd.notna(v) and v != "" else ""
+
+        # 원본 파일 순서대로: 실차, 운행시간, 수입, 지출, 충전량, 앱, 카드, 현금,
+        # 최종(금일), 공차(빈차), 누적. 실차율/빈차율은 참고로 뒤에.
         show = pd.DataFrame({
             "날짜": f["날짜"].dt.strftime("%m/%d") + "(" + f["요일"] + ")",
+            "실차 주행(km)": f["실차Km"].map(km),
+            "운행 시간": f["운행시간"].map(hm),
             "수입": f["수입"].map(won),
             "지출": f["지출"].map(won),
             "순수익": f["순수익"].map(won),
-            "운행 시간": f["운행시간"].map(hm),
-            "실차(km)": f["실차Km"].map(km),
-            "총주행(km)": f["금일운행Km"].map(km),
-            "실차율": f["실차율"].map(pct),
-            "빈차율": f["빈차율"].map(pct),
+            "충전량(L)": f["가스리터"].map(lit),
             "앱": f["앱"].map(won),
             "카드": f["카드"].map(won),
             "현금": f["현금"].map(won),
+            "최종 주행(km)": f["금일운행Km"].map(km),
+            "공차 주행(km)": f["빈차Km"].map(km),
+            "누적 주행(km)": f["누적Km"].map(km),
+            "실차율": f["실차율"].map(pct),
+            "빈차율": f["빈차율"].map(pct),
         })
-        # 행 수에 맞춰 높이 지정: 한 달치 정도는 통째로 펼쳐 세로 스크롤 걸림 방지
+        st.caption("표를 옆으로 밀면 나머지 항목이 보여요. 날짜 칸은 고정돼 있어요. "
+                   "공차, 누적, 실차율, 빈차율은 자동 계산된 값이에요.")
+        # 행 수에 맞춰 높이 지정: 한 달치는 통째로 펼쳐 세로 스크롤 걸림 방지
         tbl_h = min(38 + len(show) * 36 + 2, 1300) if len(show) else 120
-        st.dataframe(show, use_container_width=True, hide_index=True, height=tbl_h)
+        st.dataframe(show, use_container_width=True, hide_index=True, height=tbl_h,
+                     column_config={"날짜": st.column_config.Column(pinned=True)})
