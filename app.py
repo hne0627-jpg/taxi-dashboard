@@ -160,19 +160,13 @@ def save_row(row: dict):
             row_idx = i
             break
 
-    def is_empty(v):
-        return v is None or str(v).strip() in ("", "0", "0.0")
-
     if row_idx:
-        # 같은 날짜면 합치기: 새 값이 있으면 새 값, 없으면 기존 값 유지
+        # 같은 날짜면 수정: 폼에 있는 칸은 새 값으로 덮어쓰고, 폼에 없는 칸은 기존 값 유지
         old = {COLUMNS[j]: (existing[j] if j < len(existing) else "")
                for j in range(len(COLUMNS))}
-        line = []
-        for c in COLUMNS:
-            new_v = row.get(c, "")
-            line.append(old.get(c, "") if is_empty(new_v) else new_v)
+        line = [row[c] if c in row else old.get(c, "") for c in COLUMNS]
         ws.update(f"A{row_idx}", [line])
-        return True, "같은 날짜에 기록이 있어, 기존 값은 유지하고 새로 입력한 값만 추가했습니다."
+        return True, "수정되었습니다."
     else:
         line = [row.get(c, "") for c in COLUMNS]
         ws.append_row(line, value_input_option="USER_ENTERED")
@@ -374,48 +368,75 @@ with tab_input:
         f"이번 달 <b>{_income:,}원</b> 벌었어요. 목표의 <b>{_pct}%</b>, {_days}일 근무했어요."
         f"</div>", unsafe_allow_html=True)
 
-    # 폼: 입력하는 동안에는 저장되지 않아 값이 지워지지 않음. 버튼 누를 때만 저장
-    with st.form("day_form", clear_on_submit=True):
-        in_date = st.date_input("운행 날짜", value=date.today())
-        수입 = st.number_input("수입 (원)", min_value=0, step=1000, value=0)
+    # 날짜는 폼 밖에 둠: 날짜를 바꾸면 그날 저장된 값을 불러와 칸에 채움
+    in_date = st.date_input("운행 날짜", value=date.today())
+
+    existing = None
+    if not df_all.empty:
+        _match = df_all[df_all["날짜"].dt.date == in_date]
+        if not _match.empty:
+            existing = _match.iloc[0]
+    editing = existing is not None
+
+    def _v(col, default=0.0):
+        if existing is not None and pd.notna(existing.get(col)):
+            return float(existing.get(col))
+        return default
+
+    _hh = int(_v("운행시간"))
+    _mm = int(round((_v("운행시간") - _hh) * 60))
+    if _mm >= 60:  # 반올림으로 60이 되면 시간으로 올림
+        _hh += 1
+        _mm -= 60
+
+    if editing:
+        st.info("이 날짜에 이미 기록이 있어요. 아래 값을 고쳐서 저장하면 수정됩니다.")
+
+    # 폼 이름에 날짜를 넣어, 날짜가 바뀌면 폼이 새로 그려지며 그날 값으로 채워짐
+    with st.form(f"day_form_{in_date.isoformat()}", clear_on_submit=False):
+        수입 = st.number_input("수입 (원)", min_value=0, step=1000, value=int(_v("수입")))
 
         st.subheader("운행 시간", anchor=False)
         t1, t2 = st.columns(2)
-        운행시 = t1.number_input("시간", min_value=0, step=1, value=0)
-        운행분 = t2.number_input("분", min_value=0, max_value=59, step=5, value=0)
+        운행시 = t1.number_input("시간", min_value=0, step=1, value=_hh)
+        운행분 = t2.number_input("분", min_value=0, max_value=59, step=5, value=_mm)
 
         st.subheader("가스 충전", anchor=False,
                      help="주유한 날에만 입력하세요.\n\n"
                           "가스 영수증의 금액과 충전량을 함께 입력하면, "
                           "이 금액이 그날 지출로 반영됩니다.")
         g1, g2 = st.columns(2)
-        지출 = g1.number_input("가스 금액 (원)", min_value=0, step=1000, value=0)
-        가스리터 = g2.number_input("충전량 (L)", min_value=0.0, step=1.0, value=0.0)
+        지출 = g1.number_input("가스 금액 (원)", min_value=0, step=1000, value=int(_v("지출")))
+        가스리터 = g2.number_input("충전량 (L)", min_value=0.0, step=1.0, value=_v("가스리터"))
 
-        with st.expander("운행 거리"):
+        _has_km = _v("실차Km") > 0 or _v("금일운행Km") > 0
+        with st.expander("운행 거리", expanded=_has_km):
             st.caption("실차율과 연비를 확인하려면 입력하세요.")
             d1, d2 = st.columns(2)
-            실차Km = d1.number_input("실차 주행거리 (km)", min_value=0.0, step=1.0, value=0.0,
+            실차Km = d1.number_input("실차 주행거리 (km)", min_value=0.0, step=1.0, value=_v("실차Km"),
                                     help="손님을 태우고 달린 거리입니다.")
-            금일Km = d2.number_input("오늘 총 주행거리 (km)", min_value=0.0, step=1.0, value=0.0,
+            금일Km = d2.number_input("오늘 총 주행거리 (km)", min_value=0.0, step=1.0, value=_v("금일운행Km"),
                                     help="손님을 태운 거리와 빈 차로 달린 거리를 합한 오늘 전체 거리입니다.")
-        with st.expander("결제수단별 수입"):
+        _has_pay = _v("앱") > 0 or _v("카드") > 0 or _v("현금") > 0
+        with st.expander("결제수단별 수입", expanded=_has_pay):
             st.caption("결제수단별 금액을 확인하려면 입력하세요.")
             p1, p2, p3 = st.columns(3)
-            앱 = p1.number_input("앱 (원)", min_value=0, step=1000, value=0)
-            카드 = p2.number_input("카드 (원)", min_value=0, step=1000, value=0)
-            현금 = p3.number_input("현금 (원)", min_value=0, step=1000, value=0)
+            앱 = p1.number_input("앱 (원)", min_value=0, step=1000, value=int(_v("앱")))
+            카드 = p2.number_input("카드 (원)", min_value=0, step=1000, value=int(_v("카드")))
+            현금 = p3.number_input("현금 (원)", min_value=0, step=1000, value=int(_v("현금")))
 
-        st.caption("숫자를 다 넣은 뒤 아래 버튼을 눌러 저장해주세요.")
-        submitted = st.form_submit_button("기록 저장하기", type="primary",
-                                          use_container_width=True)
+        _btn = "수정 저장하기" if editing else "기록 저장하기"
+        submitted = st.form_submit_button(_btn, type="primary", use_container_width=True)
 
     if submitted:
         운행시간 = round(운행시 + 운행분 / 60, 4)
         빈차Km = max(금일Km - 실차Km, 0.0)
-        last_series = df_all["누적Km"].dropna() if not df_all.empty else pd.Series(dtype=float)
-        last_nujeok = int(last_series.iloc[-1]) if len(last_series) else 0
-        누적Km = last_nujeok + int(금일Km) if 금일Km else ""
+        if editing and pd.notna(existing.get("누적Km")):
+            누적Km = int(existing.get("누적Km"))  # 수정 시 누적거리는 그대로 유지
+        else:
+            last_series = df_all["누적Km"].dropna() if not df_all.empty else pd.Series(dtype=float)
+            last_nujeok = int(last_series.iloc[-1]) if len(last_series) else 0
+            누적Km = last_nujeok + int(금일Km) if 금일Km else ""
         순수익 = int(수입) - int(지출)
         if 수입 == 0 and 금일Km == 0 and 지출 == 0:
             st.warning("입력한 값이 없습니다. 수입을 입력한 후 저장해주세요.")
@@ -431,7 +452,8 @@ with tab_input:
             }
             ok, msg = save_row(row)
             if ok:
-                st.session_state["flash"] = f"저장되었습니다. 오늘 순수익 {순수익:,}원."
+                verb = "수정" if editing else "저장"
+                st.session_state["flash"] = f"{verb}되었습니다. 순수익 {순수익:,}원."
                 st.rerun()
             else:
                 st.error(msg)
