@@ -8,7 +8,7 @@
 import json
 import base64
 import calendar
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 import streamlit as st
@@ -31,6 +31,15 @@ NUMERIC = [c for c in COLUMNS if c != "날짜"]
 DEFAULT_GOAL = 4_500_000  # 월 목표금액
 CSV_FALLBACK = "migrated_taxi_2026.csv"
 
+# 서버(온라인 호스팅)는 세계 표준시로 도는데 한국은 9시간 빠름.
+# 그냥 두면 한국 새벽 0시부터 아침 9시 사이에 어제 날짜가 오늘로 뜸.
+KST = timezone(timedelta(hours=9))
+
+
+def today_kst() -> date:
+    """한국 시간 기준 오늘 날짜"""
+    return datetime.now(KST).date()
+
 # 각 지표 도움말 (물음표 눌렀을 때 뜨는 설명)
 HELP = {
     "순수익": "수입에서 지출(가스비)을 뺀 금액입니다.\n\n"
@@ -51,7 +60,7 @@ HELP = {
     "요일별수입": "요일별 평균 수입입니다.\n\n어떤 요일에 많이 버는지 확인할 수 있습니다.",
     "결제비율": "앱, 카드, 현금 결제 금액의 비율입니다.",
     "근무일": "선택한 기간 중 실제로 운행해 수입이 발생한 날의 수입니다.",
-    "목표게이지": "이번 달 목표 금액 대비 지금까지의 수입 달성률입니다.",
+    "목표게이지": "위에서 고른 달의 목표 금액 대비 수입 달성률입니다.",
 }
 
 WEEKDAY = ["월", "화", "수", "목", "금", "토", "일"]
@@ -355,7 +364,7 @@ with tab_input:
         st.success(st.session_state.pop("flash"))
 
     # 이번 달 진행 상황 (기록하러 들어오면 한 줄로 한눈에)
-    _tm = date.today().strftime("%Y-%m")
+    _tm = today_kst().strftime("%Y-%m")
     _cur = df_all[df_all["날짜"].dt.strftime("%Y-%m") == _tm] if not df_all.empty else df_all
     _income = int(_cur["수입"].fillna(0).sum()) if not _cur.empty else 0
     _days = int((_cur["수입"].fillna(0) > 0).sum()) if not _cur.empty else 0
@@ -367,7 +376,10 @@ with tab_input:
         f"</div>", unsafe_allow_html=True)
 
     # 날짜는 폼 밖에 둠: 날짜를 바꾸면 그날 저장된 값을 불러와 칸에 채움
-    in_date = st.date_input("운행 날짜", value=date.today())
+    # key에 오늘 날짜를 넣어둠: 앱을 계속 켜둔 채 날이 바뀌어도 다음 날 열면 오늘로 다시 맞춰짐
+    _today = today_kst()
+    in_date = st.date_input("운행 날짜", value=_today, max_value=_today,
+                            key=f"in_date_{_today.isoformat()}", format="YYYY.MM.DD")
 
     existing = None
     if not df_all.empty:
@@ -390,6 +402,25 @@ with tab_input:
     if editing:
         st.info("이 날짜에 이미 기록이 있어요. 아래 값을 고쳐서 저장하면 수정됩니다.")
 
+    # 수입은 폼 밖에 둠: 폼 안에 있으면 저장을 눌러야 합계가 다시 계산돼서,
+    # 금액을 넣는 즉시 총 수입이 더해져 보이게 하려고 밖으로 뺐음
+    _dk = in_date.isoformat()
+    st.subheader("수입", anchor=False)
+    st.caption("결제수단별로 받은 금액만 넣으면 총 수입은 자동으로 더해져요.")
+    p1, p2, p3 = st.columns(3)
+    앱 = p1.number_input("앱 (원)", min_value=0, step=1000,
+                        value=int(_v("앱")), key=f"pay_app_{_dk}")
+    카드 = p2.number_input("카드 (원)", min_value=0, step=1000,
+                         value=int(_v("카드")), key=f"pay_card_{_dk}")
+    현금 = p3.number_input("현금 (원)", min_value=0, step=1000,
+                         value=int(_v("현금")), key=f"pay_cash_{_dk}")
+    수입 = int(앱) + int(카드) + int(현금)
+    st.markdown(
+        f"<div style='background:#eef4fd;border:1px solid #d8e6fb;border-radius:12px;"
+        f"padding:12px 14px;margin:4px 0 10px;color:#1b1b1a;'>"
+        f"총 수입 <b style='font-size:1.35rem;'>{수입:,}원</b>"
+        f"</div>", unsafe_allow_html=True)
+
     # 폼: 관련 항목끼리 묶어서 배치 (거리끼리, 가스끼리). 공차/누적/실차율은 자동
     with st.form(f"day_form_{in_date.isoformat()}", clear_on_submit=False):
         st.subheader("주행거리", anchor=False)
@@ -403,14 +434,6 @@ with tab_input:
         t1, t2 = st.columns(2)
         운행시 = t1.number_input("시간", min_value=0, step=1, value=_hh)
         운행분 = t2.number_input("분", min_value=0, max_value=59, step=5, value=_mm)
-
-        st.subheader("수입", anchor=False)
-        수입 = st.number_input("수입 (원)", min_value=0, step=1000, value=int(_v("수입")))
-        st.caption("아래는 결제수단별로 나눈 금액이에요 (앱, 카드, 현금).")
-        p1, p2, p3 = st.columns(3)
-        앱 = p1.number_input("앱 (원)", min_value=0, step=1000, value=int(_v("앱")))
-        카드 = p2.number_input("카드 (원)", min_value=0, step=1000, value=int(_v("카드")))
-        현금 = p3.number_input("현금 (원)", min_value=0, step=1000, value=int(_v("현금")))
 
         st.subheader("가스 (주유한 날만)", anchor=False)
         지출 = st.number_input("가스 금액 (원)", min_value=0, step=1000, value=int(_v("지출")))
@@ -431,7 +454,7 @@ with tab_input:
             누적Km = last_nujeok + int(금일Km) if 금일Km else ""
         순수익 = int(수입) - int(지출)
         if 수입 == 0 and 금일Km == 0 and 지출 == 0:
-            st.warning("입력한 값이 없습니다. 수입을 입력한 후 저장해주세요.")
+            st.warning("입력한 값이 없습니다. 앱, 카드, 현금 금액을 넣은 후 저장해주세요.")
         else:
             row = {
                 "날짜": in_date.isoformat(),
@@ -445,7 +468,8 @@ with tab_input:
             ok, msg = save_row(row)
             if ok:
                 verb = "수정" if editing else "저장"
-                st.session_state["flash"] = f"{verb}되었습니다. 순수익 {순수익:,}원."
+                st.session_state["flash"] = (f"{verb}되었습니다. "
+                                             f"총 수입 {수입:,}원, 순수익 {순수익:,}원.")
                 st.rerun()
             else:
                 st.error(msg)
@@ -473,10 +497,14 @@ with tab_dash:
                 "- 연비: 가스 1리터로 달린 거리, 총 주행 기준 (클수록 좋음)\n"
                 "- 리터당 가스비: 지출을 충전량으로 나눈 값, 가스 1리터 가격\n\n"
                 "**목표**\n"
-                "- 목표 달성률: 이번 달 목표 금액 대비 지금까지의 수입")
-        months = sorted(df_all["날짜"].dt.strftime("%Y-%m").unique(), reverse=True)
+                "- 목표 달성률: 위에서 고른 달의 목표 금액 대비 수입")
+        # 이번 달은 기록이 아직 없어도 항상 목록에 넣고 기본으로 골라둠.
+        # 안 그러면 기록이 있는 마지막 달(예: 7월)이 이번 달인 것처럼 보임
+        this_month = today_kst().strftime("%Y-%m")
+        months = sorted(set(df_all["날짜"].dt.strftime("%Y-%m")) | {this_month},
+                        reverse=True)
         labels = {mk: f"{int(mk[:4])}년 {int(mk[5:7])}월" for mk in months}
-        sel = st.selectbox("월 선택", months, index=0,
+        sel = st.selectbox("월 선택", months, index=months.index(this_month),
                            format_func=lambda mk: labels[mk],
                            label_visibility="collapsed")
         m = df_all[df_all["날짜"].dt.strftime("%Y-%m") == sel]
@@ -492,7 +520,7 @@ with tab_dash:
         pct = round(earned / goal * 100) if goal else 0
 
         # 목표 게이지 (월은 위 선택칸으로 끝, 여기선 반복 안 함)
-        st.subheader(f"이번 달 목표 달성률 {pct}% (목표 {goal:,}원)",
+        st.subheader(f"{labels[sel]} 목표 달성률 {pct}% (목표 {goal:,}원)",
                      anchor=False)
         gfig = go.Figure(go.Indicator(
             mode="gauge+number",
@@ -513,7 +541,7 @@ with tab_dash:
         st.plotly_chart(gfig, use_container_width=True, config=CHART_CFG)
 
         # 목표 페이스 안내 (이번 달이면 남은 기간 하루 필요액까지)
-        today = date.today()
+        today = today_kst()
         remain = goal - earned
         sel_y, sel_m = int(sel[:4]), int(sel[5:7])
         if remain <= 0:
@@ -540,82 +568,86 @@ with tab_dash:
                   delta=delta(net, lambda d: int(d["순수익"].sum())))
         c3.metric("근무일", f"{work_days}일")
 
-        st.subheader("효율 지표", anchor=False)
+        if m.empty:
+            st.info(f"{labels[sel]}에는 아직 기록이 없어요. "
+                    "기록하기 탭에서 오늘 운행을 저장하면 여기에 바로 나타나요.")
+        else:
+            st.subheader("효율 지표", anchor=False)
 
-        def avg(col):
-            s = m[col].replace([float("inf"), float("-inf")], pd.NA).dropna()
-            return s.mean() if len(s) else None
+            def avg(col):
+                s = m[col].replace([float("inf"), float("-inf")], pd.NA).dropna()
+                return s.mean() if len(s) else None
 
-        def fmt(v, dec=0, suffix=""):
-            return "-" if v is None else f"{v:,.{dec}f}{suffix}"
+            def fmt(v, dec=0, suffix=""):
+                return "-" if v is None else f"{v:,.{dec}f}{suffix}"
 
-        e1, e2, e3 = st.columns(3)
-        e1.metric("시간당 순수익", fmt(avg("시간당순수익"), 0, "원"))
-        e2.metric("시간당 수입", fmt(avg("시간당수입"), 0, "원"))
-        e3.metric("1km당 수입", fmt(avg("Km당수입"), 0, "원"))
-        e4, e5 = st.columns(2)
-        e4.metric("실차율", fmt(avg("실차율"), 0, "%"))
-        e5.metric("공차율", fmt(avg("공차율"), 0, "%"))
-        e6, e7 = st.columns(2)
-        e6.metric("연비", fmt(avg("연비"), 1, " km/L"))
-        e7.metric("리터당 가스비", fmt(avg("리터당단가"), 0, "원"))
+            e1, e2, e3 = st.columns(3)
+            e1.metric("시간당 순수익", fmt(avg("시간당순수익"), 0, "원"))
+            e2.metric("시간당 수입", fmt(avg("시간당수입"), 0, "원"))
+            e3.metric("1km당 수입", fmt(avg("Km당수입"), 0, "원"))
+            e4, e5 = st.columns(2)
+            e4.metric("실차율", fmt(avg("실차율"), 0, "%"))
+            e5.metric("공차율", fmt(avg("공차율"), 0, "%"))
+            e6, e7 = st.columns(2)
+            e6.metric("연비", fmt(avg("연비"), 1, " km/L"))
+            e7.metric("리터당 가스비", fmt(avg("리터당단가"), 0, "원"))
 
-        st.divider()
+            st.divider()
 
-        # 일별 순수익 (전체 너비). 운행 안 한 날은 회색 점으로 표시
-        st.subheader("날짜별 순수익", anchor=False)
-        bar = px.bar(m, x="날짜", y="순수익", color_discrete_sequence=[PRIMARY])
-        bar.update_traces(marker=dict(cornerradius=5),
-                          hovertemplate="순수익 %{y:,}원<extra></extra>")
-        rest = m[m["수입"].fillna(0) == 0]
-        if not rest.empty:
-            bar.add_scatter(x=rest["날짜"], y=[0] * len(rest), mode="markers",
-                            marker=dict(color="#b9b8b1", size=7),
-                            hovertemplate="쉬는 날<extra></extra>", showlegend=False)
-        style_fig(bar, 300, day_axis=True)
-        st.plotly_chart(bar, use_container_width=True, config=CHART_CFG)
-        st.caption("막대가 없고 회색 점만 있는 날은 운행하지 않은 쉬는 날입니다.")
+            # 일별 순수익 (전체 너비). 운행 안 한 날은 회색 점으로 표시
+            st.subheader("날짜별 순수익", anchor=False)
+            bar = px.bar(m, x="날짜", y="순수익", color_discrete_sequence=[PRIMARY])
+            bar.update_traces(marker=dict(cornerradius=5),
+                              hovertemplate="순수익 %{y:,}원<extra></extra>")
+            rest = m[m["수입"].fillna(0) == 0]
+            if not rest.empty:
+                bar.add_scatter(x=rest["날짜"], y=[0] * len(rest), mode="markers",
+                                marker=dict(color="#b9b8b1", size=7),
+                                hovertemplate="쉬는 날<extra></extra>", showlegend=False)
+            style_fig(bar, 300, day_axis=True)
+            st.plotly_chart(bar, use_container_width=True, config=CHART_CFG)
+            st.caption("막대가 없고 회색 점만 있는 날은 운행하지 않은 쉬는 날입니다.")
 
-        # 실차율 추이 (전체 너비). 운행한 날만 이어서 표시
-        st.subheader("실차율 추이", anchor=False)
-        line = px.line(m, x="날짜", y="실차율", markers=True,
-                       color_discrete_sequence=[PRIMARY])
-        line.update_traces(line_width=2, marker_size=6, connectgaps=True,
-                           hovertemplate="실차율 %{y:.0f}%<extra></extra>")
-        style_fig(line, 280, day_axis=True)
-        line.update_yaxes(ticksuffix="%")
-        st.plotly_chart(line, use_container_width=True, config=CHART_CFG)
-        st.caption("운행한 날만 이어서 표시됩니다. 점이 없는 날은 쉬는 날입니다.")
+            # 실차율 추이 (전체 너비). 운행한 날만 이어서 표시
+            st.subheader("실차율 추이", anchor=False)
+            line = px.line(m, x="날짜", y="실차율", markers=True,
+                           color_discrete_sequence=[PRIMARY])
+            line.update_traces(line_width=2, marker_size=6, connectgaps=True,
+                               hovertemplate="실차율 %{y:.0f}%<extra></extra>")
+            style_fig(line, 280, day_axis=True)
+            line.update_yaxes(ticksuffix="%")
+            st.plotly_chart(line, use_container_width=True, config=CHART_CFG)
+            st.caption("운행한 날만 이어서 표시됩니다. 점이 없는 날은 쉬는 날입니다.")
 
-        # 요일별 평균 수입 + 결제수단 비율 (넓은 화면에선 나란히, 좁으면 위아래)
-        left, right = st.columns(2)
-        with left:
-            st.subheader("요일별 평균 수입", anchor=False)
-            wk = (m[m["수입"].fillna(0) > 0].groupby("요일")["수입"].mean()
-                  .reindex(WEEKDAY).reset_index())
-            wk["수입"] = wk["수입"].fillna(0)
-            wbar = px.bar(wk, x="요일", y="수입", color_discrete_sequence=[PRIMARY])
-            wbar.update_traces(marker=dict(cornerradius=5),
-                               hovertemplate="%{x}요일 평균 %{y:,.0f}원<extra></extra>")
-            style_fig(wbar, 300)
-            st.plotly_chart(wbar, use_container_width=True, config=CHART_CFG)
-            st.caption("막대가 없는 요일은 이 달에 운행하지 않은 요일입니다.")
-        with right:
-            st.subheader("결제수단 비율", anchor=False)
-            pay = pd.DataFrame({
-                "수단": ["앱", "카드", "현금"],
-                "금액": [m["앱"].fillna(0).sum(), m["카드"].fillna(0).sum(),
-                        m["현금"].fillna(0).sum()],
-            })
-            pie = px.pie(pay, names="수단", values="금액", hole=0.55, color="수단",
-                         color_discrete_map={"앱": PAY_COLORS[0], "카드": PAY_COLORS[1],
-                                             "현금": PAY_COLORS[2]})
-            pie.update_traces(textinfo="label+percent", textposition="outside",
-                              marker=dict(line=dict(color="#ffffff", width=2)),
-                              hovertemplate="%{label} %{value:,}원 (%{percent})<extra></extra>")
-            pie.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10),
-                              showlegend=False, font=dict(family=FONT, color=INK))
-            st.plotly_chart(pie, use_container_width=True, config=CHART_CFG)
+            # 요일별 평균 수입 + 결제수단 비율 (넓은 화면에선 나란히, 좁으면 위아래)
+            left, right = st.columns(2)
+            with left:
+                st.subheader("요일별 평균 수입", anchor=False)
+                wk = (m[m["수입"].fillna(0) > 0].groupby("요일")["수입"].mean()
+                      .reindex(WEEKDAY).reset_index())
+                wk["수입"] = wk["수입"].fillna(0)
+                wbar = px.bar(wk, x="요일", y="수입", color_discrete_sequence=[PRIMARY])
+                wbar.update_traces(marker=dict(cornerradius=5),
+                                   hovertemplate="%{x}요일 평균 %{y:,.0f}원<extra></extra>")
+                style_fig(wbar, 300)
+                st.plotly_chart(wbar, use_container_width=True, config=CHART_CFG)
+                st.caption("막대가 없는 요일은 이 달에 운행하지 않은 요일입니다.")
+            with right:
+                st.subheader("결제수단 비율", anchor=False)
+                pay = pd.DataFrame({
+                    "수단": ["앱", "카드", "현금"],
+                    "금액": [m["앱"].fillna(0).sum(), m["카드"].fillna(0).sum(),
+                            m["현금"].fillna(0).sum()],
+                })
+                pie = px.pie(pay, names="수단", values="금액", hole=0.55, color="수단",
+                             color_discrete_map={"앱": PAY_COLORS[0], "카드": PAY_COLORS[1],
+                                                 "현금": PAY_COLORS[2]})
+                pie.update_traces(textinfo="label+percent", textposition="outside",
+                                  marker=dict(line=dict(color="#ffffff", width=2)),
+                                  hovertemplate="%{label} %{value:,}원 (%{percent})<extra></extra>")
+                pie.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10),
+                                  showlegend=False, font=dict(family=FONT, color=INK))
+                st.plotly_chart(pie, use_container_width=True, config=CHART_CFG)
 
 # ---- 탭 3: 기록 조회 --------------------------------------------------------
 with tab_log:
@@ -633,23 +665,28 @@ with tab_log:
             ["최근 7일", "최근 30일", "이번 달", "지난달", "올해", "전체"],
             default="이번 달", label_visibility="collapsed") or "이번 달"
 
+        # 기준은 기록의 마지막 날이 아니라 오늘(한국 시간).
+        # 마지막 기록일을 기준으로 삼으면 며칠 안 적은 사이에 '이번 달'이 지난달이 돼버림
+        today = today_kst()
+        cal_max = max(dmax, today)  # 달력이 오늘까지 열리게
+
         if preset == "최근 7일":
-            s, e = max(dmin, dmax - timedelta(days=6)), dmax
+            s, e = max(dmin, today - timedelta(days=6)), cal_max
         elif preset == "최근 30일":
-            s, e = max(dmin, dmax - timedelta(days=29)), dmax
+            s, e = max(dmin, today - timedelta(days=29)), cal_max
         elif preset == "지난달":
-            last_prev = dmax.replace(day=1) - timedelta(days=1)
-            s, e = last_prev.replace(day=1), last_prev
+            last_prev = today.replace(day=1) - timedelta(days=1)
+            s, e = max(dmin, last_prev.replace(day=1)), last_prev
         elif preset == "올해":
-            s, e = max(dmin, date(dmax.year, 1, 1)), dmax
+            s, e = max(dmin, date(today.year, 1, 1)), cal_max
         elif preset == "전체":
-            s, e = dmin, dmax
+            s, e = dmin, cal_max
         else:  # 이번 달
-            s, e = max(dmin, dmax.replace(day=1)), dmax
+            s, e = max(dmin, today.replace(day=1)), cal_max
 
         # 달력 하나에서 시작일과 종료일을 함께 선택 (버튼을 바꾸면 따라 바뀜)
-        rng = st.date_input("조회 기간", value=(s, e), min_value=dmin, max_value=dmax,
-                            key=f"range_{preset}", format="YYYY.MM.DD")
+        rng = st.date_input("조회 기간", value=(s, e), min_value=dmin, max_value=cal_max,
+                            key=f"range_{preset}_{today.isoformat()}", format="YYYY.MM.DD")
         if isinstance(rng, (tuple, list)) and len(rng) == 2:
             s, e = rng
         elif isinstance(rng, (tuple, list)) and len(rng) == 1:
