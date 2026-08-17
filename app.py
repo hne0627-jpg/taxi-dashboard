@@ -113,11 +113,14 @@ def style_fig(fig, height=240, day_axis=False):
 # ----------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def get_worksheet():
-    """구글 시트 워크시트 객체. secrets 없으면 None."""
+    """구글 시트 워크시트 객체와 실패 사유. 연결되면 사유는 빈 문자열."""
     try:
         import gspread
         from google.oauth2.service_account import Credentials
 
+        if "gcp_service_account" not in st.secrets or "sheet_id" not in st.secrets:
+            return None, ("구글 시트 연결 정보가 설정돼 있지 않습니다. "
+                          "앱 설정의 Secrets 칸을 채워야 기록을 읽고 쓸 수 있습니다.")
         info = dict(st.secrets["gcp_service_account"])
         scopes = ["https://www.googleapis.com/auth/spreadsheets"]
         creds = Credentials.from_service_account_info(info, scopes=scopes)
@@ -127,14 +130,19 @@ def get_worksheet():
         # 헤더 없으면 한 번 세팅
         if ws.row_count == 0 or ws.acell("A1").value != "날짜":
             ws.update("A1", [COLUMNS])
-        return ws
-    except Exception:
-        return None
+        return ws, ""
+    except Exception as e:
+        return None, f"구글 시트에 연결하지 못했습니다. ({type(e).__name__}: {e})"
+
+
+def sheet_error():
+    """시트 연결 실패 사유 (연결됐으면 빈 문자열)"""
+    return get_worksheet()[1]
 
 
 def load_df():
     """시트(또는 CSV)에서 데이터를 DataFrame으로."""
-    ws = get_worksheet()
+    ws = get_worksheet()[0]
     if ws is not None:
         records = ws.get_all_records()
         df = pd.DataFrame(records)
@@ -157,9 +165,9 @@ def load_df():
 
 def save_row(row: dict):
     """한 날짜 기록을 시트에 추가하거나 갱신."""
-    ws = get_worksheet()
+    ws, err = get_worksheet()
     if ws is None:
-        return False, "구글 시트가 연결되지 않아 저장할 수 없습니다. 현재는 확인만 가능합니다."
+        return False, f"저장하지 못했습니다. {err}"
     values = ws.get_all_values()
     target_date = row["날짜"]
     existing, row_idx = None, None
@@ -348,10 +356,11 @@ st.markdown("""
 st.title("🚕 운행일지")
 
 df_all = add_metrics(load_df())
-sheet_ready = get_worksheet() is not None
+_ws, _sheet_err = get_worksheet()
+sheet_ready = _ws is not None
 if not sheet_ready:
-    st.info("구글 시트 연결 전에는 지난 기록만 확인할 수 있습니다. "
-            "연결을 완료하면 기록을 바로 저장할 수 있습니다.")
+    # 왜 비었는지 숨기지 않고 그대로 보여줌 (예전엔 조용히 넘어가서 원인을 알 수 없었음)
+    st.error("기록을 불러오지 못했습니다. 아래 이유 때문입니다.\n\n" + _sheet_err)
 
 goal = int(secret("monthly_goal", DEFAULT_GOAL))
 
@@ -477,7 +486,10 @@ with tab_input:
 # ---- 탭 2: 대시보드 ---------------------------------------------------------
 with tab_dash:
     if df_all.empty:
-        st.warning("표시할 데이터가 아직 없습니다.")
+        st.warning("표시할 데이터가 아직 없습니다."
+                   if sheet_ready else
+                   "구글 시트 연결이 안 돼서 기록을 못 불러왔습니다. "
+                   "위에 빨간 글씨로 이유가 나와 있습니다.")
     else:
         with st.expander("용어 설명 (실차율, 공차율, 연비 등)"):
             st.markdown(
@@ -657,7 +669,10 @@ with tab_dash:
 # ---- 탭 3: 기록 조회 --------------------------------------------------------
 with tab_log:
     if df_all.empty:
-        st.warning("표시할 데이터가 아직 없습니다.")
+        st.warning("표시할 데이터가 아직 없습니다."
+                   if sheet_ready else
+                   "구글 시트 연결이 안 돼서 기록을 못 불러왔습니다. "
+                   "위에 빨간 글씨로 이유가 나와 있습니다.")
     else:
         st.subheader("기간별 기록")
         st.caption("아래 버튼으로 빠르게 선택하거나, 달력에서 기간을 직접 선택할 수 있습니다.")
