@@ -498,13 +498,18 @@ with tab_dash:
                 "- 리터당 가스비: 지출을 충전량으로 나눈 값, 가스 1리터 가격\n\n"
                 "**목표**\n"
                 "- 목표 달성률: 위에서 고른 달의 목표 금액 대비 수입")
-        # 이번 달은 기록이 아직 없어도 항상 목록에 넣고 기본으로 골라둠.
+        # 이번 달은 기록이 아직 없어도 항상 목록에 넣어둠.
         # 안 그러면 기록이 있는 마지막 달(예: 7월)이 이번 달인 것처럼 보임
         this_month = today_kst().strftime("%Y-%m")
-        months = sorted(set(df_all["날짜"].dt.strftime("%Y-%m")) | {this_month},
-                        reverse=True)
+        data_months = sorted(set(df_all["날짜"].dt.strftime("%Y-%m")), reverse=True)
+        months = sorted(set(data_months) | {this_month}, reverse=True)
         labels = {mk: f"{int(mk[:4])}년 {int(mk[5:7])}월" for mk in months}
-        sel = st.selectbox("월 선택", months, index=months.index(this_month),
+        # 이번 달에 아직 기록이 없으면 빈 화면을 보여주지 말고 기록이 있는 최근 달을 띄움
+        default_mk = this_month if this_month in data_months else data_months[0]
+        if default_mk != this_month:
+            st.caption(f"{labels[this_month]}은 아직 기록이 없어서 "
+                       f"{labels[default_mk]} 기록을 보여주고 있어요.")
+        sel = st.selectbox("월 선택", months, index=months.index(default_mk),
                            format_func=lambda mk: labels[mk],
                            label_visibility="collapsed")
         m = df_all[df_all["날짜"].dt.strftime("%Y-%m") == sel]
@@ -659,16 +664,21 @@ with tab_log:
         dmin = df_all["날짜"].min().date()
         dmax = df_all["날짜"].max().date()
 
-        # 빠른 선택 버튼
-        preset = st.segmented_control(
-            "빠른 선택",
-            ["최근 7일", "최근 30일", "이번 달", "지난달", "올해", "전체"],
-            default="이번 달", label_visibility="collapsed") or "이번 달"
-
         # 기준은 기록의 마지막 날이 아니라 오늘(한국 시간).
         # 마지막 기록일을 기준으로 삼으면 며칠 안 적은 사이에 '이번 달'이 지난달이 돼버림
         today = today_kst()
         cal_max = max(dmax, today)  # 달력이 오늘까지 열리게
+
+        # 이번 달에 아직 기록이 없으면 빈 화면 대신 최근 30일을 기본으로 보여줌
+        _has_this_month = ((df_all["날짜"].dt.date >= today.replace(day=1))
+                           & (df_all["날짜"].dt.date <= today)).any()
+        _default = "이번 달" if _has_this_month else "최근 30일"
+
+        # 빠른 선택 버튼
+        preset = st.segmented_control(
+            "빠른 선택",
+            ["최근 7일", "최근 30일", "이번 달", "지난달", "올해", "전체"],
+            default=_default, label_visibility="collapsed") or _default
 
         if preset == "최근 7일":
             s, e = max(dmin, today - timedelta(days=6)), cal_max
