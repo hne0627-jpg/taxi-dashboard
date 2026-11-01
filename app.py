@@ -783,6 +783,10 @@ with tab_log:
                 return ""
             h = int(v)
             mm = round((v - h) * 60)
+            if mm == 60:
+                h, mm = h + 1, 0
+            if not h:
+                return f"{mm}분"
             return f"{h}시간 {mm}분" if mm else f"{h}시간"
 
         def km(v):
@@ -814,7 +818,9 @@ with tab_log:
                     "<div style='border:1px solid #ebe9e3;border-radius:12px;background:#fbfbf9;"
                     "padding:9px 14px;margin-bottom:8px'>"
                     f"<b style='color:#8a8880'>{dstr}</b>"
-                    "<span style='color:#a8a69e;margin-left:8px'>운행 안 함</span></div>")
+                    "<span style='color:#a8a69e;margin-left:8px'>운행 안 함"
+                    + (f", 가스 {W(r['지출'])}" if pd.notna(r["지출"]) and r["지출"] else "")
+                    + "</span></div>")
                 continue
             net = int(r["순수익"]) if pd.notna(r["순수익"]) else 0
             nc = "#2a78d6" if net >= 0 else "#d03b3b"
@@ -826,7 +832,7 @@ with tab_log:
                 cell("실차율", pct(r["실차율"]) or "-"), cell("공차율", pct(r["공차율"]) or "-"),
                 cell("충전", (lit(r["가스리터"]) + "L") if lit(r["가스리터"]) else "-"),
                 cell("앱", W(r["앱"])), cell("카드", W(r["카드"])), cell("현금", W(r["현금"])),
-                cell("누적", K(r["누적Km"])),
+                cell("계기판", K(r["누적Km"])),
             ])
             cards.append(
                 "<div style='border:1px solid #e7e5df;border-radius:14px;background:#fff;"
