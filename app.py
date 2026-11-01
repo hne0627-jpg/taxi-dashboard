@@ -49,7 +49,7 @@ HELP = {
     "누적순수익": "선택한 기간 동안 실제로 벌어들인 금액의 합계입니다.\n\n"
               "지출을 모두 뺀 금액입니다.",
     "리터당단가": "가스를 1리터에 얼마에 넣었는지 보여주는 금액입니다.",
-    "연비": "가스 1리터로 달린 거리입니다.\n\n숫자가 클수록 연료 효율이 좋습니다.",
+    "연비": "가스 1리터로 달린 거리입니다.\n\n고른 기간의 전체 주행거리를 전체 충전량으로 나눠 계산합니다. 숫자가 클수록 연료 효율이 좋습니다.",
     "Km당연료비": "1km를 달리는 데 든 가스비입니다.\n\n숫자가 작을수록 효율이 좋습니다.",
     "Km당수입": "실차 주행거리 1km마다 벌어들인 금액입니다.",
     "시간당수입": "한 시간 운행할 때마다 벌어들인 금액입니다.",
@@ -193,6 +193,44 @@ def save_row(row: dict):
 # ----------------------------------------------------------------------------
 # 파생 지표 계산
 # ----------------------------------------------------------------------------
+MAX_DAY_KM = 600  # 하루에 이보다 많이 달렸다고 나오면 기록 빠진 날이 섞인 것으로 봄
+
+
+def calc_day_distance(df, day, odo, real_km):
+    """계기판 숫자로 그날 주행거리 계산 (예전 시트 수식과 같은 방식: 오늘 계기판 - 지난 계기판).
+    반환: (금일운행Km, 빈차Km, 안내 문구, 오류 문구)"""
+    if not odo or df is None or df.empty:
+        return None, None, None, None
+    prev = df[(df["날짜"] < day) & (df["누적Km"].fillna(0) > 0)]
+    if not prev.empty:
+        last = prev.sort_values("날짜").iloc[-1]
+        last_odo, last_day = float(last["누적Km"]), last["날짜"]
+        if odo < last_odo:
+            return None, None, None, (f"계기판 숫자가 지난 기록({last_day:%m월 %d일}, "
+                                      f"{last_odo:,.0f})보다 작아요.")
+    nxt = df[(df["날짜"] > day) & (df["누적Km"].fillna(0) > 0)]
+    if not nxt.empty:
+        first = nxt.sort_values("날짜").iloc[0]
+        if odo > float(first["누적Km"]):
+            return None, None, None, (f"계기판 숫자가 다음 기록({first['날짜']:%m월 %d일}, "
+                                      f"{float(first['누적Km']):,.0f})보다 커요.")
+    if prev.empty or not real_km:
+        return None, None, None, None
+    between = df[(df["날짜"] > last_day) & (df["날짜"] < day)]
+    mixed = ((between["실차Km"].fillna(0) > 0) | (between["수입"].fillna(0) > 0)).any()
+    diff = odo - last_odo
+    if mixed:
+        return None, None, ("계기판 숫자를 안 넣은 운행일이 사이에 있어서 "
+                            "오늘 주행거리는 계산하지 않았어요."), None
+    if diff > MAX_DAY_KM:
+        return None, None, (f"지난 기록과 {diff:,.0f}km 차이가 나서 오늘 주행거리는 "
+                            "계산하지 않았어요. 계기판 숫자를 한 번 확인해 주세요."), None
+    if diff < real_km:
+        return None, None, ("실차 거리가 오늘 주행거리보다 커서 계산하지 않았어요. "
+                            "실차 거리와 계기판 숫자를 한 번 확인해 주세요."), None
+    return round(diff, 1), round(diff - real_km, 1), None, None
+
+
 def add_metrics(df: pd.DataFrame) -> pd.DataFrame:
     d = df.copy()
     if d.empty:
@@ -371,6 +409,8 @@ with tab_input:
     st.header("오늘 운행 기록", anchor=False)
     if "flash" in st.session_state:
         st.success(st.session_state.pop("flash"))
+    if "flash_warn" in st.session_state:
+        st.warning(st.session_state.pop("flash_warn"))
 
     # 이번 달 진행 상황 (기록하러 들어오면 한 줄로 한눈에)
     _tm = today_kst().strftime("%Y-%m")
@@ -435,9 +475,10 @@ with tab_input:
         st.subheader("주행거리", anchor=False)
         실차Km = st.number_input("실차 주행거리 (손님 태운 거리, km)", min_value=0.0, step=1.0,
                                 value=_v("실차Km"))
-        금일Km = st.number_input("총 주행거리 (실차 + 공차, km)", min_value=0.0, step=1.0,
-                                value=_v("금일운행Km"))
-        st.caption("공차 주행거리는 총 주행거리에서 실차를 빼서 자동으로 계산돼요.")
+        계기판 = st.number_input("계기판 숫자 (차 계기판의 현재 Km 그대로)", min_value=0, step=1,
+                              value=int(_v("누적Km")) if editing else 0, format="%d")
+        st.caption("예전 시트의 '현재 Km'와 같아요. 지난 기록과의 차이로 오늘 주행거리와 "
+                   "공차 주행거리가 자동으로 계산돼요. 주유만 한 날은 비워 두셔도 돼요.")
 
         st.subheader("운행 시간", anchor=False)
         t1, t2 = st.columns(2)
@@ -454,16 +495,14 @@ with tab_input:
 
     if submitted:
         운행시간 = round(운행시 + 운행분 / 60, 4)
-        빈차Km = max(금일Km - 실차Km, 0.0)
-        if editing and pd.notna(existing.get("누적Km")):
-            누적Km = int(existing.get("누적Km"))  # 수정 시 누적거리는 그대로 유지
-        else:
-            last_series = df_all["누적Km"].dropna() if not df_all.empty else pd.Series(dtype=float)
-            last_nujeok = int(last_series.iloc[-1]) if len(last_series) else 0
-            누적Km = last_nujeok + int(금일Km) if 금일Km else ""
+        금일Km, 빈차Km, dist_note, dist_err = calc_day_distance(
+            df_all, pd.Timestamp(in_date), 계기판 or None, 실차Km or None)
+        누적Km = 계기판 or ""
         순수익 = int(수입) - int(지출)
-        if 수입 == 0 and 금일Km == 0 and 지출 == 0:
+        if 수입 == 0 and not 계기판 and 지출 == 0:
             st.warning("입력한 값이 없습니다. 앱, 카드, 현금 금액을 넣은 후 저장해주세요.")
+        elif dist_err:
+            st.error(dist_err + " 계기판 숫자를 다시 확인해 주세요.")
         else:
             row = {
                 "날짜": in_date.isoformat(),
@@ -478,7 +517,10 @@ with tab_input:
             if ok:
                 verb = "수정" if editing else "저장"
                 st.session_state["flash"] = (f"{verb}되었습니다. "
-                                             f"총 수입 {수입:,}원, 순수익 {순수익:,}원.")
+                                             f"총 수입 {수입:,}원, 순수익 {순수익:,}원."
+                                             + (f" 오늘 주행거리 {금일Km:,.0f}km." if 금일Km else ""))
+                if dist_note:
+                    st.session_state["flash_warn"] = dist_note
                 st.rerun()
             else:
                 st.error(msg)
@@ -496,8 +538,8 @@ with tab_dash:
                 "**주행거리**\n"
                 "- 실차 주행거리: 손님을 태우고 달린 거리 (직접 입력)\n"
                 "- 공차 주행거리: 빈 차로 달린 거리 (자동, 총주행에서 실차 뺀 값)\n"
-                "- 총 주행거리: 그날 전체 거리, 실차와 공차를 합한 값 (직접 입력)\n"
-                "- 누적 주행거리: 차 전체 누적 거리, 오도미터 값 (자동)\n\n"
+                "- 총 주행거리: 그날 전체 거리, 오늘 계기판 숫자에서 지난 계기판 숫자를 뺀 값 (자동)\n"
+                "- 계기판 숫자: 차 계기판의 현재 Km, 예전 시트의 '현재 Km' (직접 입력)\n\n"
                 "**수익**\n"
                 "- 순수익: 수입에서 지출(가스비)을 뺀, 하루에 실제로 남은 돈\n"
                 "- 시간당 순수익: 순수익을 운행 시간으로 나눈 값\n"
@@ -506,8 +548,8 @@ with tab_dash:
                 "**효율**\n"
                 "- 실차율: 총 주행거리 중 실차 거리의 비율 (높을수록 좋음)\n"
                 "- 공차율: 총 주행거리 중 공차 거리의 비율 (예전 시트 '실차율' 값과 같음)\n"
-                "- 연비: 가스 1리터로 달린 거리, 총 주행 기준 (클수록 좋음)\n"
-                "- 리터당 가스비: 지출을 충전량으로 나눈 값, 가스 1리터 가격\n\n"
+                "- 연비: 기간 전체 주행거리를 기간 전체 충전량으로 나눈 값 (클수록 좋음)\n"
+                "- 리터당 가스비: 기간 전체 가스비를 기간 전체 충전량으로 나눈 값\n\n"
                 "**목표**\n"
                 "- 목표 달성률: 위에서 고른 달의 목표 금액 대비 수입")
         # 이번 달은 기록이 아직 없어도 항상 목록에 넣어둠.
@@ -602,12 +644,22 @@ with tab_dash:
             e1.metric("시간당 순수익", fmt(avg("시간당순수익"), 0, "원"))
             e2.metric("시간당 수입", fmt(avg("시간당수입"), 0, "원"))
             e3.metric("1km당 수입", fmt(avg("Km당수입"), 0, "원"))
+            # 비율 지표는 하루 비율의 평균이 아니라 기간 합계끼리 나눔.
+            # 가스는 넣은 날과 달린 날이 달라서 하루 단위로 나누면 연비가 틀어짐
+            def total_ratio(num_col, den_col, both=True):
+                x = m[[num_col, den_col]].copy()
+                if both:
+                    x = x.dropna()
+                n_, d_ = x[num_col].fillna(0).sum(), x[den_col].fillna(0).sum()
+                return n_ / d_ if d_ else None
+
+            _rate = total_ratio("실차Km", "금일운행Km")
             e4, e5 = st.columns(2)
-            e4.metric("실차율", fmt(avg("실차율"), 0, "%"))
-            e5.metric("공차율", fmt(avg("공차율"), 0, "%"))
+            e4.metric("실차율", fmt(_rate * 100 if _rate is not None else None, 0, "%"))
+            e5.metric("공차율", fmt((1 - _rate) * 100 if _rate is not None else None, 0, "%"))
             e6, e7 = st.columns(2)
-            e6.metric("연비", fmt(avg("연비"), 1, " km/L"))
-            e7.metric("리터당 가스비", fmt(avg("리터당단가"), 0, "원"))
+            e6.metric("연비", fmt(total_ratio("금일운행Km", "가스리터", both=False), 1, " km/L"))
+            e7.metric("리터당 가스비", fmt(total_ratio("지출", "가스리터"), 0, "원"))
 
             st.divider()
 
