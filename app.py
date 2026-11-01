@@ -189,6 +189,19 @@ def save_row(row: dict):
         return True, "기록이 저장되었습니다."
 
 
+def delete_row(target_date: str):
+    """한 날짜 기록을 시트에서 지움."""
+    ws, err = get_worksheet()
+    if ws is None:
+        return False, f"지우지 못했습니다. {err}"
+    values = ws.get_all_values()
+    for i, r in enumerate(values[1:], start=2):
+        if r and r[0] == target_date:
+            ws.delete_rows(i)
+            return True, "기록을 지웠습니다."
+    return False, "지울 기록을 찾지 못했습니다."
+
+
 # ----------------------------------------------------------------------------
 # 파생 지표 계산
 # ----------------------------------------------------------------------------
@@ -449,6 +462,16 @@ with tab_input:
 
     if editing:
         st.info("이 날짜에 이미 기록이 있어요. 아래 값을 고쳐서 저장하면 수정됩니다.")
+        with st.popover("이 날짜 기록 지우기", use_container_width=True):
+            st.write(f"{in_date.month}월 {in_date.day}일 기록을 지울까요? 지우면 되돌릴 수 없어요.")
+            if st.button("지우기", type="primary", key=f"del_{in_date.isoformat()}",
+                         use_container_width=True):
+                ok, msg = delete_row(in_date.isoformat())
+                if ok:
+                    st.session_state["flash"] = f"{in_date.month}월 {in_date.day}일 {msg}"
+                    st.rerun()
+                else:
+                    st.error(msg)
 
     # 수입은 폼 밖에 둠: 폼 안에 있으면 저장을 눌러야 합계가 다시 계산돼서,
     # 금액을 넣는 즉시 총 수입이 더해져 보이게 하려고 밖으로 뺐음
@@ -470,7 +493,7 @@ with tab_input:
         f"</div>", unsafe_allow_html=True)
 
     # 폼: 관련 항목끼리 묶어서 배치 (거리끼리, 가스끼리). 공차/누적/실차율은 자동
-    with st.form(f"day_form_{in_date.isoformat()}", clear_on_submit=False):
+    with st.form(f"day_form_{in_date.isoformat()}", clear_on_submit=False, enter_to_submit=False):
         st.subheader("주행거리", anchor=False)
         실차Km = st.number_input("실차 주행거리 (km)", min_value=0.0, step=1.0,
                                 value=_v("실차Km"))
