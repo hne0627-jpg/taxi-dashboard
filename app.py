@@ -582,8 +582,6 @@ with tab_dash:
         labels = {mk: f"{int(mk[:4])}년 {int(mk[5:7])}월" for mk in months}
         # 이번 달에 아직 기록이 없으면 빈 화면을 보여주지 말고 기록이 있는 최근 달을 띄움
         default_mk = this_month if this_month in data_months else data_months[0]
-        if default_mk != this_month:
-            st.caption(f"{int(this_month[5:7])}월 기록은 아직 없습니다.")
         sel = st.selectbox("월 선택", months, index=months.index(default_mk),
                            format_func=lambda mk: labels[mk],
                            label_visibility="collapsed")
