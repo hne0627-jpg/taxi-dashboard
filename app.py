@@ -205,13 +205,13 @@ def calc_day_distance(df, day, odo, real_km):
         last = prev.sort_values("날짜").iloc[-1]
         last_odo, last_day = float(last["누적Km"]), last["날짜"]
         if odo < last_odo:
-            return None, None, None, (f"계기판 숫자가 지난 기록({last_day:%m월 %d일}, "
+            return None, None, None, (f"계기판 주행거리가 지난 기록({last_day:%m월 %d일}, "
                                       f"{last_odo:,.0f})보다 작아요.")
     nxt = df[(df["날짜"] > day) & (df["누적Km"].fillna(0) > 0)]
     if not nxt.empty:
         first = nxt.sort_values("날짜").iloc[0]
         if odo > float(first["누적Km"]):
-            return None, None, None, (f"계기판 숫자가 다음 기록({first['날짜']:%m월 %d일}, "
+            return None, None, None, (f"계기판 주행거리가 다음 기록({first['날짜']:%m월 %d일}, "
                                       f"{float(first['누적Km']):,.0f})보다 커요.")
     if prev.empty or not real_km:
         return None, None, None, None
@@ -219,14 +219,14 @@ def calc_day_distance(df, day, odo, real_km):
     mixed = ((between["실차Km"].fillna(0) > 0) | (between["수입"].fillna(0) > 0)).any()
     diff = odo - last_odo
     if mixed:
-        return None, None, ("계기판 숫자를 안 넣은 운행일이 사이에 있어서 "
+        return None, None, ("계기판 주행거리를 안 넣은 운행일이 사이에 있어서 "
                             "오늘 주행거리는 계산하지 않았어요."), None
     if diff > MAX_DAY_KM:
         return None, None, (f"지난 기록과 {diff:,.0f}km 차이가 나서 오늘 주행거리는 "
-                            "계산하지 않았어요. 계기판 숫자를 한 번 확인해 주세요."), None
+                            "계산하지 않았어요. 계기판 주행거리를 한 번 확인해 주세요."), None
     if diff < real_km:
-        return None, None, ("실차 거리가 오늘 주행거리보다 커서 계산하지 않았어요. "
-                            "실차 거리와 계기판 숫자를 한 번 확인해 주세요."), None
+        return None, None, ("실차 주행거리가 오늘 주행거리보다 커서 계산하지 않았어요. "
+                            "실차 주행거리와 계기판 주행거리를 한 번 확인해 주세요."), None
     return round(diff, 1), round(diff - real_km, 1), None, None
 
 
@@ -472,9 +472,9 @@ with tab_input:
     # 폼: 관련 항목끼리 묶어서 배치 (거리끼리, 가스끼리). 공차/누적/실차율은 자동
     with st.form(f"day_form_{in_date.isoformat()}", clear_on_submit=False):
         st.subheader("주행거리", anchor=False)
-        실차Km = st.number_input("실차 주행거리 (손님 태운 거리, km)", min_value=0.0, step=1.0,
+        실차Km = st.number_input("실차 주행거리 (km)", min_value=0.0, step=1.0,
                                 value=_v("실차Km"))
-        계기판 = st.number_input("현재 Km (계기판)", min_value=0, step=1,
+        계기판 = st.number_input("계기판 주행거리 (km)", min_value=0, step=1,
                               value=int(_v("누적Km")) if editing else 0, format="%d")
 
         st.subheader("운행 시간", anchor=False)
@@ -498,7 +498,7 @@ with tab_input:
         if 수입 == 0 and not 계기판 and 지출 == 0:
             st.warning("입력한 값이 없습니다. 앱, 카드, 현금 금액을 넣은 후 저장해주세요.")
         elif dist_err:
-            st.error(dist_err + " 계기판 숫자를 다시 확인해 주세요.")
+            st.error(dist_err + " 계기판 주행거리를 다시 확인해 주세요.")
         else:
             row = {
                 "날짜": in_date.isoformat(),
@@ -534,8 +534,8 @@ with tab_dash:
                 "**주행거리**\n"
                 "- 실차 주행거리: 손님을 태우고 달린 거리 (직접 입력)\n"
                 "- 공차 주행거리: 빈 차로 달린 거리 (자동, 총주행에서 실차 뺀 값)\n"
-                "- 총 주행거리: 그날 전체 거리, 오늘 계기판 숫자에서 지난 계기판 숫자를 뺀 값 (자동)\n"
-                "- 현재 Km: 차 계기판에 보이는 숫자 (직접 입력)\n\n"
+                "- 총 주행거리: 그날 전체 거리, 오늘 계기판 주행거리에서 지난 계기판 주행거리를 뺀 값 (자동)\n"
+                "- 계기판 주행거리: 차 계기판에 보이는 숫자 (직접 입력)\n\n"
                 "**수익**\n"
                 "- 순수익: 수입에서 지출(가스비)을 뺀, 하루에 실제로 남은 돈\n"
                 "- 시간당 순수익: 순수익을 운행 시간으로 나눈 값\n"
