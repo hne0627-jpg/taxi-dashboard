@@ -509,7 +509,7 @@ with tab_input:
         지출 = st.number_input("가스 금액 (원)", min_value=0, step=1000, value=int(_v("지출")))
         가스리터 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=_v("가스리터"),
                                format="%.3f")
-        with st.expander("두 번째 충전"):
+        with st.expander("두 번째 충전 (두 번 넣은 날만)"):
             지출2 = st.number_input("가스 금액 (원)", min_value=0, step=1000, value=0, key="gas_won_2")
             가스리터2 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=0.0,
                                     format="%.3f", key="gas_l_2")
