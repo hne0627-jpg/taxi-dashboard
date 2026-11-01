@@ -49,7 +49,7 @@ HELP = {
     "누적순수익": "선택한 기간 동안 실제로 벌어들인 금액의 합계입니다.\n\n"
               "지출을 모두 뺀 금액입니다.",
     "리터당단가": "가스 1리터당 충전 금액입니다.",
-    "연비": "가스 1리터로 달린 거리입니다.\n\n고른 기간의 전체 주행거리를 전체 충전량으로 나눠 계산합니다. 숫자가 클수록 연료 효율이 좋습니다.",
+    "연비": "가스 1리터로 달린 거리입니다.\n\n선택한 기간의 전체 주행거리를 전체 충전량으로 나눈 값입니다. 숫자가 클수록 연료 효율이 좋습니다.",
     "Km당연료비": "1km를 달리는 데 든 가스비입니다.\n\n숫자가 작을수록 효율이 좋습니다.",
     "Km당수입": "실차 주행거리 1km마다 벌어들인 금액입니다.",
     "시간당수입": "한 시간 운행할 때마다 벌어들인 금액입니다.",
@@ -219,27 +219,26 @@ def calc_day_distance(df, day, odo, real_km):
         last_odo, last_day = float(last["누적Km"]), last["날짜"]
         if odo < last_odo:
             return None, None, None, (f"계기판 주행거리가 지난 기록({last_day:%m월 %d일}, "
-                                      f"{last_odo:,.0f})보다 작습니다.")
+                                      f"{last_odo:,.0f}km)보다 작습니다.")
     nxt = df[(df["날짜"] > day) & (df["누적Km"].fillna(0) > 0)]
     if not nxt.empty:
         first = nxt.sort_values("날짜").iloc[0]
         if odo > float(first["누적Km"]):
             return None, None, None, (f"계기판 주행거리가 다음 기록({first['날짜']:%m월 %d일}, "
-                                      f"{float(first['누적Km']):,.0f})보다 큽니다.")
+                                      f"{float(first['누적Km']):,.0f}km)보다 큽니다.")
     if prev.empty or not real_km:
         return None, None, None, None
     between = df[(df["날짜"] > last_day) & (df["날짜"] < day)]
     mixed = ((between["실차Km"].fillna(0) > 0) | (between["수입"].fillna(0) > 0)).any()
     diff = odo - last_odo
     if mixed:
-        return None, None, ("계기판 주행거리가 입력되지 않은 운행일이 사이에 있어 "
-                            "오늘 주행거리는 계산되지 않았습니다."), None
+        return None, None, None, None
     if diff > MAX_DAY_KM:
-        return None, None, (f"지난 기록과 {diff:,.0f}km 차이가 나서 오늘 주행거리는 "
-                            "계산되지 않았습니다. 계기판 주행거리를 확인해 주세요."), None
+        return None, None, (f"계기판 주행거리가 지난 기록보다 {diff:,.0f}km 많습니다. "
+                            "숫자가 틀렸다면 이 날짜를 다시 선택해 수정해 주세요."), None
     if diff < real_km:
-        return None, None, ("실차 주행거리가 오늘 주행거리보다 커서 계산되지 않았습니다. "
-                            "실차 주행거리와 계기판 주행거리를 확인해 주세요."), None
+        return None, None, (f"실차 주행거리가 하루 주행거리({diff:,.0f}km)보다 깁니다. "
+                            "숫자가 틀렸다면 이 날짜를 다시 선택해 수정해 주세요."), None
     return round(diff, 1), round(diff - real_km, 1), None, None
 
 
@@ -410,7 +409,7 @@ _ws, _sheet_err = get_worksheet()
 sheet_ready = _ws is not None
 if not sheet_ready:
     # 왜 비었는지 숨기지 않고 그대로 보여줌 (예전엔 조용히 넘어가서 원인을 알 수 없었음)
-    st.error("기록을 불러오지 못했습니다. 아래 이유 때문입니다.\n\n" + _sheet_err)
+    st.error("기록을 불러올 수 없습니다. 이 화면을 캡처해서 보내 주세요.\n\n" + _sheet_err)
 
 goal = int(secret("monthly_goal", DEFAULT_GOAL))
 
@@ -461,7 +460,7 @@ with tab_input:
         _mm -= 60
 
     if editing:
-        st.info("이 날짜에 이미 기록이 있습니다. 값을 수정한 뒤 저장하면 반영됩니다.")
+        st.info("이미 저장한 날짜입니다. 바꿀 값을 입력한 뒤 '수정 저장하기'를 눌러 주세요.")
         with st.popover("이 날짜 기록 삭제", use_container_width=True):
             st.write(f"{in_date.month}월 {in_date.day}일 기록을 삭제하시겠습니까? 삭제한 기록은 복구할 수 없습니다.")
             if st.button("삭제", type="primary", key=f"del_{in_date.isoformat()}",
@@ -477,7 +476,6 @@ with tab_input:
     # 금액을 넣는 즉시 총 수입이 더해져 보이게 하려고 밖으로 뺐음
     _dk = in_date.isoformat()
     st.subheader("수입", anchor=False)
-    st.caption("결제수단별 금액을 입력하면 총 수입이 자동으로 계산됩니다.")
     p1, p2, p3 = st.columns(3)
     앱 = p1.number_input("앱 (원)", min_value=0, step=1000,
                         value=int(_v("앱")), key=f"pay_app_{_dk}")
@@ -513,7 +511,6 @@ with tab_input:
             지출2 = st.number_input("가스 금액 (원)", min_value=0, step=1000, value=0, key="gas_won_2")
             가스리터2 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=0.0,
                                     format="%.3f", key="gas_l_2")
-        st.caption("가스 금액은 그날 지출로 반영됩니다.")
         _btn = "수정 저장하기" if editing else "기록 저장하기"
         submitted = st.form_submit_button(_btn, type="primary", use_container_width=True)
 
@@ -526,9 +523,9 @@ with tab_input:
         누적Km = 계기판 or ""
         순수익 = int(수입) - int(지출)
         if 수입 == 0 and not 계기판 and 지출 == 0:
-            st.warning("입력한 값이 없습니다. 결제수단별 금액을 입력한 후 저장해 주세요.")
+            st.warning("입력한 값이 없습니다. 수입이나 가스 금액을 입력해 주세요.")
         elif dist_err:
-            st.error(dist_err + " 계기판 주행거리를 다시 확인해 주세요.")
+            st.error(dist_err + " 숫자를 다시 확인해 주세요.")
         else:
             row = {
                 "날짜": in_date.isoformat(),
@@ -542,9 +539,9 @@ with tab_input:
             ok, msg = save_row(row)
             if ok:
                 verb = "수정" if editing else "저장"
-                st.session_state["flash"] = (f"{verb}되었습니다. "
-                                             f"총 수입 {수입:,}원, 순수익 {순수익:,}원."
-                                             + (f" 오늘 주행거리 {금일Km:,.0f}km." if 금일Km else ""))
+                st.session_state["flash"] = (f"{in_date.month}월 {in_date.day}일 기록이 {verb}되었습니다. "
+                                             f"수입 {수입:,}원, 순수익 {순수익:,}원"
+                                             + (f", 주행거리 {금일Km:,.0f}km" if 금일Km else ""))
                 if dist_note:
                     st.session_state["flash_warn"] = dist_note
                 st.rerun()
@@ -554,30 +551,29 @@ with tab_input:
 # ---- 탭 2: 대시보드 ---------------------------------------------------------
 with tab_dash:
     if df_all.empty:
-        st.warning("표시할 데이터가 아직 없습니다."
+        st.warning("저장된 기록이 없습니다."
                    if sheet_ready else
-                   "구글 시트 연결이 안 돼서 기록을 못 불러왔습니다. "
-                   "위에 빨간 글씨로 이유가 나와 있습니다.")
+                   "기록을 불러올 수 없습니다. 맨 위 안내를 확인해 주세요.")
     else:
         with st.expander("용어 설명 (실차율, 공차율, 연비 등)"):
             st.markdown(
                 "**주행거리**\n"
-                "- 실차 주행거리: 손님을 태우고 달린 거리 (직접 입력)\n"
-                "- 공차 주행거리: 빈 차로 달린 거리 (자동, 총주행에서 실차 뺀 값)\n"
-                "- 총 주행거리: 그날 전체 거리, 오늘 계기판 주행거리에서 지난 계기판 주행거리를 뺀 값 (자동)\n"
-                "- 계기판 주행거리: 차 계기판에 보이는 숫자 (직접 입력)\n\n"
+                "- 실차 주행거리: 손님을 태우고 달린 거리\n"
+                "- 공차 주행거리: 손님 없이 달린 거리\n"
+                "- 총 주행거리: 하루 동안 달린 전체 거리 (실차 + 공차)\n"
+                "- 계기판 주행거리: 차 계기판에 표시된 누적 거리\n\n"
                 "**수익**\n"
-                "- 순수익: 수입에서 지출(가스비)을 뺀, 하루에 실제로 남은 돈\n"
+                "- 순수익: 수입에서 가스비를 뺀 금액\n"
                 "- 시간당 순수익: 순수익을 운행 시간으로 나눈 값\n"
                 "- 시간당 수입: 수입을 운행 시간으로 나눈 값\n"
                 "- 1km당 수입: 수입을 실차 주행거리로 나눈 값\n\n"
                 "**효율**\n"
                 "- 실차율: 총 주행거리 중 실차 주행거리의 비율 (높을수록 좋음)\n"
                 "- 공차율: 총 주행거리 중 공차 주행거리의 비율\n"
-                "- 연비: 기간 전체 주행거리를 기간 전체 충전량으로 나눈 값 (클수록 좋음)\n"
-                "- 리터당 가스비: 기간 전체 가스비를 기간 전체 충전량으로 나눈 값\n\n"
+                "- 연비: 가스 1리터로 달린 거리 (클수록 좋음)\n"
+                "- 리터당 가스비: 가스 1리터 가격\n\n"
                 "**목표**\n"
-                "- 목표 달성률: 위에서 고른 달의 목표 금액 대비 수입")
+                "- 목표 달성률: 선택한 달의 목표 금액 대비 수입 비율")
         # 이번 달은 기록이 아직 없어도 항상 목록에 넣어둠.
         # 안 그러면 기록이 있는 마지막 달(예: 7월)이 이번 달인 것처럼 보임
         this_month = today_kst().strftime("%Y-%m")
@@ -587,8 +583,7 @@ with tab_dash:
         # 이번 달에 아직 기록이 없으면 빈 화면을 보여주지 말고 기록이 있는 최근 달을 띄움
         default_mk = this_month if this_month in data_months else data_months[0]
         if default_mk != this_month:
-            st.caption(f"{labels[this_month]}은 아직 기록이 없어서 "
-                       f"{labels[default_mk]} 기록을 표시합니다.")
+            st.caption(f"{int(this_month[5:7])}월 기록은 아직 없습니다.")
         sel = st.selectbox("월 선택", months, index=months.index(default_mk),
                            format_func=lambda mk: labels[mk],
                            label_visibility="collapsed")
@@ -635,7 +630,7 @@ with tab_dash:
             days_left = calendar.monthrange(sel_y, sel_m)[1] - today.day + 1
             per_day = remain / days_left if days_left else remain
             st.info(f"목표까지 {remain:,}원 남았습니다. "
-                    f"남은 {days_left}일 동안 하루 {per_day:,.0f}원이면 달성됩니다.")
+                    f"남은 {days_left}일 동안 하루 {per_day:,.0f}원씩 벌면 목표 달성입니다.")
         else:
             st.caption(f"이 달은 목표보다 {remain:,}원 적었습니다.")
 
@@ -654,8 +649,7 @@ with tab_dash:
         c3.metric("근무일", f"{work_days}일")
 
         if m.empty:
-            st.info(f"{labels[sel]}에는 아직 기록이 없습니다. "
-                    "기록하기 탭에서 저장한 기록이 여기에 표시됩니다.")
+            st.info(f"{int(sel[5:7])}월 기록은 아직 없습니다.")
         else:
             st.subheader("효율 지표", anchor=False)
 
@@ -701,7 +695,7 @@ with tab_dash:
                                 hovertemplate="쉬는 날<extra></extra>", showlegend=False)
             style_fig(bar, 300, day_axis=True)
             st.plotly_chart(bar, use_container_width=True, config=CHART_CFG)
-            st.caption("막대가 없고 회색 점만 있는 날은 운행하지 않은 쉬는 날입니다.")
+            st.caption("회색 점은 쉬는 날입니다.")
 
             # 실차율 추이 (전체 너비). 운행한 날만 이어서 표시
             st.subheader("실차율 추이", anchor=False)
@@ -712,7 +706,7 @@ with tab_dash:
             style_fig(line, 280, day_axis=True)
             line.update_yaxes(ticksuffix="%")
             st.plotly_chart(line, use_container_width=True, config=CHART_CFG)
-            st.caption("운행한 날만 이어서 표시됩니다. 점이 없는 날은 쉬는 날입니다.")
+            st.caption("점이 없는 날은 쉬는 날입니다.")
 
             # 요일별 평균 수입 + 결제수단 비율 (넓은 화면에선 나란히, 좁으면 위아래)
             left, right = st.columns(2)
@@ -726,7 +720,7 @@ with tab_dash:
                                    hovertemplate="%{x}요일 평균 %{y:,.0f}원<extra></extra>")
                 style_fig(wbar, 300)
                 st.plotly_chart(wbar, use_container_width=True, config=CHART_CFG)
-                st.caption("막대가 없는 요일은 이 달에 운행하지 않은 요일입니다.")
+                st.caption("막대가 없는 요일은 이 달에 쉰 요일입니다.")
             with right:
                 st.subheader("결제수단 비율", anchor=False)
                 pay = pd.DataFrame({
@@ -747,13 +741,11 @@ with tab_dash:
 # ---- 탭 3: 기록 조회 --------------------------------------------------------
 with tab_log:
     if df_all.empty:
-        st.warning("표시할 데이터가 아직 없습니다."
+        st.warning("저장된 기록이 없습니다."
                    if sheet_ready else
-                   "구글 시트 연결이 안 돼서 기록을 못 불러왔습니다. "
-                   "위에 빨간 글씨로 이유가 나와 있습니다.")
+                   "기록을 불러올 수 없습니다. 맨 위 안내를 확인해 주세요.")
     else:
         st.subheader("기간별 기록")
-        st.caption("버튼 또는 달력에서 조회 기간을 선택할 수 있습니다.")
         dmin = df_all["날짜"].min().date()
         dmax = df_all["날짜"].max().date()
 
@@ -838,7 +830,6 @@ with tab_log:
                     f"<b style='color:#1b1b1a'>{val}</b></div>")
 
         # 카드 뷰: 하루씩 위아래로 (모바일에서 옆으로 안 밀어도 됨). 최근 날짜가 위
-        st.caption("최근 날짜순으로 표시됩니다.")
         cards = []
         for _, r in f.sort_values("날짜", ascending=False).iterrows():
             dstr = f"{r['날짜'].month}월 {r['날짜'].day}일 ({r['요일']})"
