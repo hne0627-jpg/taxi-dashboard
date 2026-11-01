@@ -1,7 +1,7 @@
 """
 개인택시 운행일지 대시보드
 - 영수증(미터기/가스) 사진 올리면 자동 추출해서 구글 시트에 기록
-- 순수익, 연비, 실차율 등 자동 계산 + 그래프 + 캘린더 조회 + 목표 게이지
+- 가스비 제외 수입, 연비, 실차율 등 자동 계산 + 그래프 + 캘린더 조회 + 목표 게이지
 - 폰 브라우저에서도 잘 보이게 세로 한 줄 구조
 """
 
@@ -42,12 +42,10 @@ def today_kst() -> date:
 
 # 각 지표 도움말 (물음표 눌렀을 때 뜨는 설명)
 HELP = {
-    "순수익": "수입에서 지출(가스비)을 뺀 금액입니다.\n\n"
-            "하루에 실제로 손에 남은 돈입니다.",
-    "시간당순수익": "한 시간 운행으로 실제 남긴 금액입니다.\n\n"
-                "순수익을 운행 시간으로 나눠 계산합니다.",
-    "누적순수익": "선택한 기간 동안 실제로 벌어들인 금액의 합계입니다.\n\n"
-              "지출을 모두 뺀 금액입니다.",
+    "가스비제외수입": "수입에서 가스비를 뺀 금액입니다.\n\n"
+            "카드, 앱 수수료와 보험료, 정비비는 빼지 않은 금액입니다.",
+    "시간당가스비제외수입": "가스비 제외 수입을 운행 시간으로 나눈 금액입니다.",
+    "누적가스비제외수입": "선택한 기간의 가스비 제외 수입 합계입니다.",
     "리터당단가": "가스 1리터당 충전 금액입니다.",
     "연비": "가스 1리터로 달린 거리입니다.\n\n선택한 기간의 전체 주행거리를 전체 충전량으로 나눈 값입니다. 숫자가 클수록 연료 효율이 좋습니다.",
     "Km당연료비": "1km를 달리는 데 든 가스비입니다.\n\n숫자가 작을수록 효율이 좋습니다.",
@@ -250,8 +248,8 @@ def add_metrics(df: pd.DataFrame) -> pd.DataFrame:
     def safe_div(a, b):
         return (a / b).where((b != 0) & b.notna())
 
-    d["순수익"] = d["수입"].fillna(0) - d["지출"].fillna(0)
-    d["시간당순수익"] = safe_div(d["순수익"], d["운행시간"])
+    d["가스비제외수입"] = d["수입"].fillna(0) - d["지출"].fillna(0)
+    d["시간당가스비제외수입"] = safe_div(d["가스비제외수입"], d["운행시간"])
     d["리터당단가"] = safe_div(d["지출"], d["가스리터"])
     d["연비"] = safe_div(d["금일운행Km"], d["가스리터"])
     d["Km당연료비"] = safe_div(d["지출"], d["금일운행Km"])
@@ -521,7 +519,7 @@ with tab_input:
         금일Km, 빈차Km, dist_note, dist_err = calc_day_distance(
             df_all, pd.Timestamp(in_date), 계기판 or None, 실차Km or None)
         누적Km = 계기판 or ""
-        순수익 = int(수입) - int(지출)
+        가스비제외 = int(수입) - int(지출)
         if 수입 == 0 and not 계기판 and 지출 == 0:
             st.warning("입력한 값이 없습니다. 수입이나 가스 금액을 입력해 주세요.")
         elif dist_err:
@@ -540,7 +538,7 @@ with tab_input:
             if ok:
                 verb = "수정" if editing else "저장"
                 st.session_state["flash"] = (f"{in_date.month}월 {in_date.day}일 기록이 {verb}되었습니다. "
-                                             f"수입 {수입:,}원, 순수익 {순수익:,}원"
+                                             f"수입 {수입:,}원, 가스비 제외 {가스비제외:,}원"
                                              + (f", 주행거리 {금일Km:,.0f}km" if 금일Km else ""))
                 if dist_note:
                     st.session_state["flash_warn"] = dist_note
@@ -563,8 +561,8 @@ with tab_dash:
                 "- 총 주행거리: 하루 동안 달린 전체 거리 (실차 + 공차)\n"
                 "- 계기판 주행거리: 차 계기판에 표시된 누적 거리\n\n"
                 "**수익**\n"
-                "- 순수익: 수입에서 가스비를 뺀 금액\n"
-                "- 시간당 순수익: 순수익을 운행 시간으로 나눈 값\n"
+                "- 가스비 제외 수입: 수입에서 가스비를 뺀 금액 (카드, 앱 수수료와 보험료, 정비비는 빼지 않음)\n"
+                "- 시간당 가스비 제외 수입: 가스비 제외 수입을 운행 시간으로 나눈 값\n"
                 "- 시간당 수입: 수입을 운행 시간으로 나눈 값\n"
                 "- 1km당 수입: 수입을 실차 주행거리로 나눈 값\n\n"
                 "**효율**\n"
@@ -593,7 +591,7 @@ with tab_dash:
                 if idx + 1 < len(months) else None)
 
         earned = int(m["수입"].fillna(0).sum())
-        net = int(m["순수익"].sum())
+        net = int(m["가스비제외수입"].sum())
         work_days = int((m["수입"].fillna(0) > 0).sum())
         pct = round(earned / goal * 100) if goal else 0
 
@@ -642,8 +640,8 @@ with tab_dash:
         c1, c2, c3 = st.columns(3)
         c1.metric("총 수입", f"{earned:,}원",
                   delta=delta(earned, lambda d: int(d["수입"].fillna(0).sum())))
-        c2.metric("순수익", f"{net:,}원",
-                  delta=delta(net, lambda d: int(d["순수익"].sum())))
+        c2.metric("가스비 제외 수입", f"{net:,}원",
+                  delta=delta(net, lambda d: int(d["가스비제외수입"].sum())))
         c3.metric("근무일", f"{work_days}일")
 
         if m.empty:
@@ -659,7 +657,7 @@ with tab_dash:
                 return "-" if v is None else f"{v:,.{dec}f}{suffix}"
 
             e1, e2, e3 = st.columns(3)
-            e1.metric("시간당 순수익", fmt(avg("시간당순수익"), 0, "원"))
+            e1.metric("시간당 가스비 제외 수입", fmt(avg("시간당가스비제외수입"), 0, "원"))
             e2.metric("시간당 수입", fmt(avg("시간당수입"), 0, "원"))
             e3.metric("1km당 수입", fmt(avg("Km당수입"), 0, "원"))
             # 비율 지표는 하루 비율의 평균이 아니라 기간 합계끼리 나눔.
@@ -681,11 +679,11 @@ with tab_dash:
 
             st.divider()
 
-            # 일별 순수익 (전체 너비). 운행 안 한 날은 회색 점으로 표시
-            st.subheader("날짜별 순수익", anchor=False)
-            bar = px.bar(m, x="날짜", y="순수익", color_discrete_sequence=[PRIMARY])
+            # 일별 가스비 제외 수입 (전체 너비). 운행 안 한 날은 회색 점으로 표시
+            st.subheader("날짜별 가스비 제외 수입", anchor=False)
+            bar = px.bar(m, x="날짜", y="가스비제외수입", color_discrete_sequence=[PRIMARY])
             bar.update_traces(marker=dict(cornerradius=5),
-                              hovertemplate="순수익 %{y:,}원<extra></extra>")
+                              hovertemplate="가스비 제외 수입 %{y:,}원<extra></extra>")
             rest = m[m["수입"].fillna(0) == 0]
             if not rest.empty:
                 bar.add_scatter(x=rest["날짜"], y=[0] * len(rest), mode="markers",
@@ -788,7 +786,7 @@ with tab_log:
         f = df_all[(df_all["날짜"].dt.date >= s) & (df_all["날짜"].dt.date <= e)]
         k1, k2, k3 = st.columns(3)
         k1.metric("수입 합계", f"{int(f['수입'].fillna(0).sum()):,}원")
-        k2.metric("순수익 합계", f"{int(f['순수익'].sum()):,}원")
+        k2.metric("가스비 제외 수입 합계", f"{int(f['가스비제외수입'].sum()):,}원")
         k3.metric("근무일", f"{int((f['수입'].fillna(0) > 0).sum())}일")
 
         # 표: 단위 붙여서 보기 좋게 (돈은 콤마, 퍼센트는 정수, 시간은 N시간 M분)
@@ -841,7 +839,7 @@ with tab_log:
                     + (f", 가스 {W(r['지출'])}" if pd.notna(r["지출"]) and r["지출"] else "")
                     + "</span></div>")
                 continue
-            net = int(r["순수익"]) if pd.notna(r["순수익"]) else 0
+            net = int(r["가스비제외수입"]) if pd.notna(r["가스비제외수입"]) else 0
             nc = "#2a78d6" if net >= 0 else "#d03b3b"
             body = "".join([
                 cell("수입", W(r["수입"])), cell("지출", W(r["지출"])),
@@ -859,7 +857,7 @@ with tab_log:
                 "<div style='display:flex;justify-content:space-between;align-items:baseline;"
                 "margin-bottom:6px'>"
                 f"<span style='font-size:1.08rem;font-weight:800;color:#1b1b1a'>{dstr}</span>"
-                f"<span style='font-size:1rem;font-weight:700;color:{nc}'>순수익 {net:,}원</span></div>"
+                f"<span style='font-size:1rem;font-weight:700;color:{nc}'>가스비 제외 {net:,}원</span></div>"
                 f"<div style='display:grid;grid-template-columns:1fr 1fr;column-gap:14px'>{body}</div>"
                 "</div>")
         st.markdown(
