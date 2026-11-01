@@ -474,7 +474,7 @@ with tab_input:
         st.subheader("주행거리", anchor=False)
         실차Km = st.number_input("실차 주행거리 (손님 태운 거리, km)", min_value=0.0, step=1.0,
                                 value=_v("실차Km"))
-        계기판 = st.number_input("계기판 Km", min_value=0, step=1,
+        계기판 = st.number_input("현재 Km (계기판)", min_value=0, step=1,
                               value=int(_v("누적Km")) if editing else 0, format="%d")
 
         st.subheader("운행 시간", anchor=False)
@@ -535,7 +535,7 @@ with tab_dash:
                 "- 실차 주행거리: 손님을 태우고 달린 거리 (직접 입력)\n"
                 "- 공차 주행거리: 빈 차로 달린 거리 (자동, 총주행에서 실차 뺀 값)\n"
                 "- 총 주행거리: 그날 전체 거리, 오늘 계기판 숫자에서 지난 계기판 숫자를 뺀 값 (자동)\n"
-                "- 계기판 Km: 차 계기판에 보이는 숫자 (직접 입력)\n\n"
+                "- 현재 Km: 차 계기판에 보이는 숫자 (직접 입력)\n\n"
                 "**수익**\n"
                 "- 순수익: 수입에서 지출(가스비)을 뺀, 하루에 실제로 남은 돈\n"
                 "- 시간당 순수익: 순수익을 운행 시간으로 나눈 값\n"
