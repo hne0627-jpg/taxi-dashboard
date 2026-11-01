@@ -484,12 +484,19 @@ with tab_input:
 
         st.subheader("가스 (주유한 날만)", anchor=False)
         지출 = st.number_input("가스 금액 (원)", min_value=0, step=1000, value=int(_v("지출")))
-        가스리터 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=_v("가스리터"))
+        가스리터 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=_v("가스리터"),
+                               format="%.3f")
+        with st.expander("두 번째 충전"):
+            지출2 = st.number_input("가스 금액 (원)", min_value=0, step=1000, value=0, key="gas_won_2")
+            가스리터2 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=0.0,
+                                    format="%.3f", key="gas_l_2")
         st.caption("가스 금액이 그날 지출로 반영돼요.")
         _btn = "수정 저장하기" if editing else "기록 저장하기"
         submitted = st.form_submit_button(_btn, type="primary", use_container_width=True)
 
     if submitted:
+        지출 = int(지출) + int(지출2)
+        가스리터 = round(float(가스리터) + float(가스리터2), 3)
         운행시간 = round(운행시 + 운행분 / 60, 4)
         금일Km, 빈차Km, dist_note, dist_err = calc_day_distance(
             df_all, pd.Timestamp(in_date), 계기판 or None, 실차Km or None)
