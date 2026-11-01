@@ -48,7 +48,7 @@ HELP = {
                 "순수익을 운행 시간으로 나눠 계산합니다.",
     "누적순수익": "선택한 기간 동안 실제로 벌어들인 금액의 합계입니다.\n\n"
               "지출을 모두 뺀 금액입니다.",
-    "리터당단가": "가스를 1리터에 얼마에 넣었는지 보여주는 금액입니다.",
+    "리터당단가": "가스 1리터당 충전 금액입니다.",
     "연비": "가스 1리터로 달린 거리입니다.\n\n고른 기간의 전체 주행거리를 전체 충전량으로 나눠 계산합니다. 숫자가 클수록 연료 효율이 좋습니다.",
     "Km당연료비": "1km를 달리는 데 든 가스비입니다.\n\n숫자가 작을수록 효율이 좋습니다.",
     "Km당수입": "실차 주행거리 1km마다 벌어들인 금액입니다.",
@@ -193,13 +193,13 @@ def delete_row(target_date: str):
     """한 날짜 기록을 시트에서 지움."""
     ws, err = get_worksheet()
     if ws is None:
-        return False, f"지우지 못했습니다. {err}"
+        return False, f"삭제하지 못했습니다. {err}"
     values = ws.get_all_values()
     for i, r in enumerate(values[1:], start=2):
         if r and r[0] == target_date:
             ws.delete_rows(i)
-            return True, "기록을 지웠습니다."
-    return False, "지울 기록을 찾지 못했습니다."
+            return True, "기록이 삭제되었습니다."
+    return False, "삭제할 기록을 찾지 못했습니다."
 
 
 # ----------------------------------------------------------------------------
@@ -219,27 +219,27 @@ def calc_day_distance(df, day, odo, real_km):
         last_odo, last_day = float(last["누적Km"]), last["날짜"]
         if odo < last_odo:
             return None, None, None, (f"계기판 주행거리가 지난 기록({last_day:%m월 %d일}, "
-                                      f"{last_odo:,.0f})보다 작아요.")
+                                      f"{last_odo:,.0f})보다 작습니다.")
     nxt = df[(df["날짜"] > day) & (df["누적Km"].fillna(0) > 0)]
     if not nxt.empty:
         first = nxt.sort_values("날짜").iloc[0]
         if odo > float(first["누적Km"]):
             return None, None, None, (f"계기판 주행거리가 다음 기록({first['날짜']:%m월 %d일}, "
-                                      f"{float(first['누적Km']):,.0f})보다 커요.")
+                                      f"{float(first['누적Km']):,.0f})보다 큽니다.")
     if prev.empty or not real_km:
         return None, None, None, None
     between = df[(df["날짜"] > last_day) & (df["날짜"] < day)]
     mixed = ((between["실차Km"].fillna(0) > 0) | (between["수입"].fillna(0) > 0)).any()
     diff = odo - last_odo
     if mixed:
-        return None, None, ("계기판 주행거리를 안 넣은 운행일이 사이에 있어서 "
-                            "오늘 주행거리는 계산하지 않았어요."), None
+        return None, None, ("계기판 주행거리가 입력되지 않은 운행일이 사이에 있어 "
+                            "오늘 주행거리는 계산되지 않았습니다."), None
     if diff > MAX_DAY_KM:
         return None, None, (f"지난 기록과 {diff:,.0f}km 차이가 나서 오늘 주행거리는 "
-                            "계산하지 않았어요. 계기판 주행거리를 한 번 확인해 주세요."), None
+                            "계산되지 않았습니다. 계기판 주행거리를 확인해 주세요."), None
     if diff < real_km:
-        return None, None, ("실차 주행거리가 오늘 주행거리보다 커서 계산하지 않았어요. "
-                            "실차 주행거리와 계기판 주행거리를 한 번 확인해 주세요."), None
+        return None, None, ("실차 주행거리가 오늘 주행거리보다 커서 계산되지 않았습니다. "
+                            "실차 주행거리와 계기판 주행거리를 확인해 주세요."), None
     return round(diff, 1), round(diff - real_km, 1), None, None
 
 
@@ -433,7 +433,7 @@ with tab_input:
     st.markdown(
         f"<div style='background:#eef4fd;border:1px solid #d8e6fb;border-radius:12px;"
         f"padding:10px 14px;margin:2px 0 6px;font-size:1rem;color:#1b1b1a;'>"
-        f"이번 달 <b>{_income:,}원</b> 벌었어요. 목표의 <b>{_pct}%</b>, {_days}일 근무했어요."
+        f"이번 달 수입 <b>{_income:,}원</b> (목표의 <b>{_pct}%</b>), 근무 <b>{_days}일</b>"
         f"</div>", unsafe_allow_html=True)
 
     # 날짜는 폼 밖에 둠: 날짜를 바꾸면 그날 저장된 값을 불러와 칸에 채움
@@ -461,10 +461,10 @@ with tab_input:
         _mm -= 60
 
     if editing:
-        st.info("이 날짜에 이미 기록이 있어요. 아래 값을 고쳐서 저장하면 수정됩니다.")
-        with st.popover("이 날짜 기록 지우기", use_container_width=True):
-            st.write(f"{in_date.month}월 {in_date.day}일 기록을 지울까요? 지우면 되돌릴 수 없어요.")
-            if st.button("지우기", type="primary", key=f"del_{in_date.isoformat()}",
+        st.info("이 날짜에 이미 기록이 있습니다. 값을 수정한 뒤 저장하면 반영됩니다.")
+        with st.popover("이 날짜 기록 삭제", use_container_width=True):
+            st.write(f"{in_date.month}월 {in_date.day}일 기록을 삭제하시겠습니까? 삭제한 기록은 복구할 수 없습니다.")
+            if st.button("삭제", type="primary", key=f"del_{in_date.isoformat()}",
                          use_container_width=True):
                 ok, msg = delete_row(in_date.isoformat())
                 if ok:
@@ -477,7 +477,7 @@ with tab_input:
     # 금액을 넣는 즉시 총 수입이 더해져 보이게 하려고 밖으로 뺐음
     _dk = in_date.isoformat()
     st.subheader("수입", anchor=False)
-    st.caption("결제수단별로 받은 금액만 넣으면 총 수입은 자동으로 더해져요.")
+    st.caption("결제수단별 금액을 입력하면 총 수입이 자동으로 계산됩니다.")
     p1, p2, p3 = st.columns(3)
     앱 = p1.number_input("앱 (원)", min_value=0, step=1000,
                         value=int(_v("앱")), key=f"pay_app_{_dk}")
@@ -505,15 +505,15 @@ with tab_input:
         운행시 = t1.number_input("시간", min_value=0, step=1, value=_hh)
         운행분 = t2.number_input("분", min_value=0, max_value=59, step=5, value=_mm)
 
-        st.subheader("가스 (주유한 날만)", anchor=False)
+        st.subheader("가스 (충전한 날만)", anchor=False)
         지출 = st.number_input("가스 금액 (원)", min_value=0, step=1000, value=int(_v("지출")))
         가스리터 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=_v("가스리터"),
                                format="%.3f")
-        with st.expander("두 번째 충전 (두 번 넣은 날만)"):
+        with st.expander("두 번째 충전 (하루 2회 충전 시)"):
             지출2 = st.number_input("가스 금액 (원)", min_value=0, step=1000, value=0, key="gas_won_2")
             가스리터2 = st.number_input("충전량 (L)", min_value=0.0, step=1.0, value=0.0,
                                     format="%.3f", key="gas_l_2")
-        st.caption("가스 금액이 그날 지출로 반영돼요.")
+        st.caption("가스 금액은 그날 지출로 반영됩니다.")
         _btn = "수정 저장하기" if editing else "기록 저장하기"
         submitted = st.form_submit_button(_btn, type="primary", use_container_width=True)
 
@@ -526,7 +526,7 @@ with tab_input:
         누적Km = 계기판 or ""
         순수익 = int(수입) - int(지출)
         if 수입 == 0 and not 계기판 and 지출 == 0:
-            st.warning("입력한 값이 없습니다. 앱, 카드, 현금 금액을 넣은 후 저장해주세요.")
+            st.warning("입력한 값이 없습니다. 결제수단별 금액을 입력한 후 저장해 주세요.")
         elif dist_err:
             st.error(dist_err + " 계기판 주행거리를 다시 확인해 주세요.")
         else:
@@ -588,7 +588,7 @@ with tab_dash:
         default_mk = this_month if this_month in data_months else data_months[0]
         if default_mk != this_month:
             st.caption(f"{labels[this_month]}은 아직 기록이 없어서 "
-                       f"{labels[default_mk]} 기록을 보여주고 있어요.")
+                       f"{labels[default_mk]} 기록을 표시합니다.")
         sel = st.selectbox("월 선택", months, index=months.index(default_mk),
                            format_func=lambda mk: labels[mk],
                            label_visibility="collapsed")
@@ -630,14 +630,14 @@ with tab_dash:
         remain = goal - earned
         sel_y, sel_m = int(sel[:4]), int(sel[5:7])
         if remain <= 0:
-            st.success(f"목표를 {abs(remain):,}원 넘겼어요. 잘하고 계세요!")
+            st.success(f"목표보다 {abs(remain):,}원 더 벌었습니다.")
         elif (sel_y, sel_m) == (today.year, today.month):
             days_left = calendar.monthrange(sel_y, sel_m)[1] - today.day + 1
             per_day = remain / days_left if days_left else remain
-            st.info(f"목표까지 {remain:,}원 남았어요. "
-                    f"남은 {days_left}일 동안 하루 {per_day:,.0f}원이면 달성해요.")
+            st.info(f"목표까지 {remain:,}원 남았습니다. "
+                    f"남은 {days_left}일 동안 하루 {per_day:,.0f}원이면 달성됩니다.")
         else:
-            st.caption(f"이 달은 목표보다 {remain:,}원 적었어요.")
+            st.caption(f"이 달은 목표보다 {remain:,}원 적었습니다.")
 
         # 이번 달 요약
         def delta(cur, sumfn):
@@ -654,8 +654,8 @@ with tab_dash:
         c3.metric("근무일", f"{work_days}일")
 
         if m.empty:
-            st.info(f"{labels[sel]}에는 아직 기록이 없어요. "
-                    "기록하기 탭에서 오늘 운행을 저장하면 여기에 바로 나타나요.")
+            st.info(f"{labels[sel]}에는 아직 기록이 없습니다. "
+                    "기록하기 탭에서 저장한 기록이 여기에 표시됩니다.")
         else:
             st.subheader("효율 지표", anchor=False)
 
@@ -753,7 +753,7 @@ with tab_log:
                    "위에 빨간 글씨로 이유가 나와 있습니다.")
     else:
         st.subheader("기간별 기록")
-        st.caption("아래 버튼으로 빠르게 선택하거나, 달력에서 기간을 직접 선택할 수 있습니다.")
+        st.caption("버튼 또는 달력에서 조회 기간을 선택할 수 있습니다.")
         dmin = df_all["날짜"].min().date()
         dmax = df_all["날짜"].max().date()
 
@@ -838,7 +838,7 @@ with tab_log:
                     f"<b style='color:#1b1b1a'>{val}</b></div>")
 
         # 카드 뷰: 하루씩 위아래로 (모바일에서 옆으로 안 밀어도 됨). 최근 날짜가 위
-        st.caption("최근 날짜가 위에 있어요. 운행한 날은 카드로 자세히, 쉬는 날은 한 줄로 보여요.")
+        st.caption("최근 날짜순으로 표시됩니다.")
         cards = []
         for _, r in f.sort_values("날짜", ascending=False).iterrows():
             dstr = f"{r['날짜'].month}월 {r['날짜'].day}일 ({r['요일']})"
@@ -874,5 +874,5 @@ with tab_log:
                 f"<div style='display:grid;grid-template-columns:1fr 1fr;column-gap:14px'>{body}</div>"
                 "</div>")
         st.markdown(
-            "".join(cards) or "<div style='color:#8a8880'>이 기간에 기록이 없어요.</div>",
+            "".join(cards) or "<div style='color:#8a8880'>이 기간에 기록이 없습니다.</div>",
             unsafe_allow_html=True)
